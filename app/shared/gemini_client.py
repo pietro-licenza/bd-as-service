@@ -76,6 +76,11 @@ class GeminiClient:
     def __init__(self):
         """Initialize Gemini client with API key from settings."""
         from app.core.config import settings
+        import os
+        
+        # Check if API key is from environment or default
+        api_key_source = "environment" if os.getenv("GEMINI_API_KEY") else "default"
+        logger.info(f"GeminiClient init: API key source = {api_key_source}")
         
         genai.configure(api_key=settings.GEMINI_API_KEY)
         self.model_text = 'gemini-2.5-flash-lite'  # For text extraction
