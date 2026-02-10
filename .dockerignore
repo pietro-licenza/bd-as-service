@@ -88,5 +88,4 @@ test_*.py
 *_test.py
 
 # Config files that shouldn't be in container
-config/config.yaml
 bd_image_parser_service_account.json

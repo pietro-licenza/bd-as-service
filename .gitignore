@@ -120,7 +120,6 @@ Thumbs.db
 
 # Project specific
 bd_image_parser_service_account.json
-config/config.yaml
 exports/
 __pycache__/
 *.log

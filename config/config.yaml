@@ -1,0 +1,14 @@
+# Configurações do projeto
+# Adicione aqui as configurações necessárias para o projeto
+
+gemini:
+  access_key: "AIzaSyCtBzhyDgY-l8pTqTm2FURrZVsdjQyd5BA"  # Substitua pela sua access key do Gemini
+  endpoint: "https://api.gemini.com/v1/process"  # Substitua pelo endpoint correto da API do Gemini
+
+gcp:
+  project_id: "gen-lang-client-0481115304" 
+  location: "us-central1"
+  storage_bucket: "bd-image-parser-products"
+  service_account_key_path: "bd_image_parser_service_account.json"
+  service_account_secret_name: "bd-image-parser-sa-key"
+  use_secret_manager: false
