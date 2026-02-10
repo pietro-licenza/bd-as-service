@@ -8,7 +8,6 @@ import os
 import json
 import logging
 import tempfile
-import imghdr
 from typing import List, Tuple
 from pathlib import Path
 import google.generativeai as genai

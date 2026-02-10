@@ -9,7 +9,7 @@ import shutil
 from typing import List
 from datetime import datetime
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File
 import re
 
 from app.services.sams_club.schemas import BatchResponse, BatchProductResponse
