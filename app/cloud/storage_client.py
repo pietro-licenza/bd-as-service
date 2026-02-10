@@ -23,13 +23,13 @@ class StorageClient:
         # Authenticate
         if self.use_secret_manager:
             credentials_json = self._get_credentials_from_secret_manager(
-                config['gcp']['service_account_secret_name']
+                settings.GCP_SERVICE_ACCOUNT_SECRET_NAME
             )
         else:
             credentials_path = os.path.join(
                 os.path.dirname(__file__), 
                 '../../', 
-                config['gcp']['service_account_key_path']
+                settings.GCP_SERVICE_ACCOUNT_KEY_PATH
             )
             with open(credentials_path, 'r') as f:
                 credentials_json = json.load(f)
