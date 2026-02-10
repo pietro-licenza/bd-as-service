@@ -22,9 +22,15 @@ class StorageClient:
         
         # Authenticate
         if self.use_secret_manager:
-            credentials_json = self._get_credentials_from_secret_manager(
-                settings.GCP_SERVICE_ACCOUNT_SECRET_NAME
-            )
+            # Use credentials injected as environment variable
+            credentials_json_str = os.getenv("GCP_SERVICE_ACCOUNT_JSON")
+            if credentials_json_str:
+                credentials_json = json.loads(credentials_json_str)
+            else:
+                # Fallback to Secret Manager
+                credentials_json = self._get_credentials_from_secret_manager(
+                    settings.GCP_SERVICE_ACCOUNT_SECRET_NAME
+                )
         else:
             credentials_path = os.path.join(
                 os.path.dirname(__file__), 

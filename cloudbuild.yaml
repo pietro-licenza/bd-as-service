@@ -36,7 +36,7 @@ steps:
       - '--set-env-vars'
       - 'GCP_PROJECT_ID=$PROJECT_ID,GCP_USE_SECRET_MANAGER=true,DEBUG=false'
       - '--set-secrets'
-      - 'GCP_SERVICE_ACCOUNT_SECRET_NAME=bd-image-parser-sa-key:latest'
+      - 'GCP_SERVICE_ACCOUNT_JSON=bd-image-parser-sa-key:latest'
       - '--set-secrets'
       - 'GEMINI_API_KEY=gemini-api-key:latest'
 
