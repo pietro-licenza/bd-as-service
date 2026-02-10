@@ -16,6 +16,7 @@ from app.services.sams_club.schemas import BatchResponse, BatchProductResponse
 from app.shared.gemini_client import send_to_gemini, generate_product_images_with_gemini, get_gemini_client
 from app.core.config import settings
 from app.shared.excel_generator import generate_standard_excel
+from app.shared.log_streamer import log_streamer, create_log_streaming_response
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -48,6 +49,10 @@ async def process_batch(files: List[UploadFile] = File(...)) -> BatchResponse:
     """
     logger.info(f"🚀 Iniciando processamento em lote de {len(files)} imagens")
     
+    # Clear previous logs
+    log_streamer.clear_logs()
+    log_streamer.log(f"🚀 Iniciando processamento em lote de {len(files)} imagens")
+    
     # Group files by product based on filename pattern
     product_groups = {}
     unmatched_files = []
@@ -70,15 +75,15 @@ async def process_batch(files: List[UploadFile] = File(...)) -> BatchResponse:
     
     # If there are unmatched files, group every 3 images as one product
     if unmatched_files:
-        logger.warning(f"⚠️  {len(unmatched_files)} arquivo(s) sem padrão 'productX_'. Agrupando a cada 3 imagens.")
+        log_streamer.log(f"⚠️  {len(unmatched_files)} arquivo(s) sem padrão 'productX_'. Agrupando a cada 3 imagens.", "WARNING")
         images_per_product = 3
         for i in range(0, len(unmatched_files), images_per_product):
             product_key = f"product_{len(product_groups) + 1}"
             product_groups[product_key] = unmatched_files[i:i + images_per_product]
     
-    logger.info(f"📦 {len(product_groups)} produto(s) identificado(s)")
+    log_streamer.log(f"📦 {len(product_groups)} produto(s) identificado(s)")
     for prod_key, prod_files in product_groups.items():
-        logger.info(f"  • {prod_key}: {len(prod_files)} imagem(ns)")
+        log_streamer.log(f"  • {prod_key}: {len(prod_files)} imagem(ns)")
     
     # Process each product
     all_products = []
@@ -89,7 +94,7 @@ async def process_batch(files: List[UploadFile] = File(...)) -> BatchResponse:
         temp_paths = []
         
         try:
-            logger.info(f"⚙️  Processando {product_id} com {len(product_files)} imagem(ns)...")
+            log_streamer.log(f"⚙️  Processando {product_id} com {len(product_files)} imagem(ns)...")
             
             # Create temporary directory
             temp_dir = tempfile.mkdtemp()
@@ -103,14 +108,15 @@ async def process_batch(files: List[UploadFile] = File(...)) -> BatchResponse:
                 temp_paths.append(str(temp_path))
             
             # Send images to Gemini for data extraction
+            log_streamer.log(f"🤖 Enviando imagens para análise do Gemini...")
             result = send_to_gemini(temp_paths)
-            logger.info(f"📥 Resposta recebida do Gemini para {product_id}")
+            log_streamer.log(f"📥 Resposta recebida do Gemini para {product_id}")
             
             # Parse gemini_response (it's a JSON string)
             gemini_response_text = result.get("gemini_response", "")
             product_image_path = result.get("product_image_path")
             
-            logger.info(f"🖼️  Imagem do produto identificada: {product_image_path}")
+            log_streamer.log(f"🖼️  Imagem do produto identificada: {Path(product_image_path).name}")
             
             gemini_data = {}
             if isinstance(gemini_response_text, str):
@@ -118,10 +124,10 @@ async def process_batch(files: List[UploadFile] = File(...)) -> BatchResponse:
                     # Clean JSON formatting (remove markdown code blocks)
                     clean_json = gemini_response_text.replace("```json", "").replace("```", "").strip()
                     gemini_data = json.loads(clean_json)
-                    logger.info(f"✅ Dados extraídos: {gemini_data.get('nome_produto', 'N/A')}")
+                    log_streamer.log(f"✅ Dados extraídos: {gemini_data.get('nome_produto', 'N/A')}")
                 except json.JSONDecodeError as e:
-                    logger.error(f"❌ Erro ao parsear JSON do Gemini: {str(e)}")
-                    logger.error(f"Resposta recebida: {gemini_response_text[:200]}...")
+                    log_streamer.log(f"❌ Erro ao parsear JSON do Gemini: {str(e)}", "ERROR")
+                    log_streamer.log(f"Resposta recebida: {gemini_response_text[:200]}...", "ERROR")
                     gemini_data = {"error": "Resposta inválida da IA"}
             
             # Generate description locally and use it as the canonical description (override any existing)
@@ -130,13 +136,13 @@ async def process_batch(files: List[UploadFile] = File(...)) -> BatchResponse:
                     gc = get_gemini_client()
                     product_title = gemini_data.get("nome_produto", "")
                     especificacoes = gemini_data.get("especificacoes", [])
-                    logger.info(f"✍️  Gerando descrição padrão para '{product_title}' usando prompt local")
+                    log_streamer.log(f"✍️  Gerando descrição padrão para '{product_title}' usando prompt local")
                     generated_desc = gc.generate_description(product_title, especificacoes)
                     generated_desc = generated_desc or ""
                     gemini_data["descricao"] = generated_desc
-                    logger.info("✓ Descrição gerada e atribuída aos dados do produto")
+                    log_streamer.log("✓ Descrição gerada e atribuída aos dados do produto")
                 except Exception as desc_err:
-                    logger.warning(f"⚠️  Falha ao gerar descrição localmente: {desc_err}")
+                    log_streamer.log(f"⚠️  Falha ao gerar descrição localmente: {desc_err}", "WARNING")
 
             # Generate product images with AI and upload to cloud
             generated_images_urls = []
@@ -144,7 +150,7 @@ async def process_batch(files: List[UploadFile] = File(...)) -> BatchResponse:
             if product_image_path and isinstance(gemini_data, dict) and "error" not in gemini_data:
                 try:
                     product_name = gemini_data.get("nome_produto", "produto")
-                    logger.info(f"🎨 Iniciando geração de imagens no cloud para '{product_name}'...")
+                    log_streamer.log(f"🎨 Iniciando geração de imagens no cloud para '{product_name}'...")
                     
                     # Extract numeric ID from product_id (e.g., "product_1" -> 1)
                     numeric_id = None
@@ -152,22 +158,22 @@ async def process_batch(files: List[UploadFile] = File(...)) -> BatchResponse:
                     if id_match:
                         numeric_id = int(id_match.group())
                     
-                    logger.info(f"📸 Chamando generate_product_images_with_gemini...")
+                    log_streamer.log(f"📸 Chamando generate_product_images_with_gemini...")
                     image_gen_result = generate_product_images_with_gemini(
                         product_image_path=product_image_path,
                         product_name=product_name,
                         product_id=numeric_id
                     )
                     generated_images_urls = image_gen_result.get("public_urls", [])
-                    logger.info(f"✅ {len(generated_images_urls)} imagens geradas e enviadas ao GCS!")
-                    logger.info(f"🔗 URLs: {generated_images_urls}")
+                    log_streamer.log(f"✅ {len(generated_images_urls)} imagens geradas e enviadas ao GCS!")
+                    log_streamer.log(f"🔗 URLs: {generated_images_urls}")
                 except Exception as img_error:
-                    logger.error(f"❌ Erro ao gerar imagens para {product_id}: {str(img_error)}", exc_info=True)
+                    log_streamer.log(f"❌ Erro ao gerar imagens para {product_id}: {str(img_error)}", "ERROR")
             else:
                 if not product_image_path:
-                    logger.warning(f"⚠️  product_image_path não encontrado, pulando geração de imagens")
+                    log_streamer.log(f"⚠️  product_image_path não encontrado, pulando geração de imagens", "WARNING")
                 if "error" in gemini_data:
-                    logger.warning(f"⚠️  Erro nos dados do Gemini, pulando geração de imagens")
+                    log_streamer.log(f"⚠️  Erro nos dados do Gemini, pulando geração de imagens", "WARNING")
             
             # Create product response
             product_response = BatchProductResponse(
@@ -246,3 +252,12 @@ async def process_batch(files: List[UploadFile] = File(...)) -> BatchResponse:
         total_products=len(all_products),
         excel_download_url=excel_url
     )
+
+
+@router.get("/logs/stream")
+async def stream_logs():
+    """
+    Stream logs in real-time for frontend display.
+    Returns Server-Sent Events stream.
+    """
+    return create_log_streaming_response()

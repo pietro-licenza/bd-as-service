@@ -519,6 +519,64 @@
             border-left-color: #5a6a7f;
         }
 
+        /* Logs Section */
+        .logs-section {
+            background: var(--bg-primary);
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border-color);
+            margin-top: 2rem;
+        }
+
+        .logs-section h2 {
+            color: var(--text-primary);
+            margin-bottom: 1.5rem;
+            font-size: 1.375rem;
+            font-weight: 600;
+        }
+
+        .logs-container {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        .logs-content {
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 1rem;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+
+        .log-entry {
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+            padding: 0.25rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-entry[data-level="ERROR"] {
+            color: #ef4444;
+            font-weight: 500;
+        }
+
+        .log-entry[data-level="WARNING"] {
+            color: #f59e0b;
+            font-weight: 500;
+        }
+
+        .log-entry[data-level="INFO"] {
+            color: var(--text-secondary);
+        }
+
         .product-result.error {
             border-left-color: var(--danger-color);
             background: rgba(239, 68, 68, 0.1);
@@ -829,8 +887,68 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="logs-section">
+                        <h2>📋 Logs de Execução</h2>
+                        <div class="logs-container">
+                            <div id="logsContent" class="logs-content">
+                                <div class="log-entry">Aguardando processamento...</div>
+                            </div>
+                        </div>
+                    </div>
                 `,
                 onMount: initSamsClubPage
+            },
+            leroyMerlin: {
+                title: 'Integrações - Leroy Merlin',
+                render: () => `
+                    <div class="page-header">
+                        <h1>🏠 Processador Leroy Merlin</h1>
+                        <p>Extração automática de dados de produtos Leroy Merlin via URLs</p>
+                    </div>
+
+                    <div class="upload-section">
+                        <h2>Processar URLs</h2>
+                        <p>Cole as URLs dos produtos Leroy Merlin. O sistema irá extrair automaticamente título, preço, imagens e especificações.</p>
+                        
+                        <div id="urlsContainer"></div>
+                        
+                        <div class="action-buttons">
+                            <button class="btn btn-add" id="addUrlBtn">
+                                <span>➕</span>
+                                <span>Adicionar URL</span>
+                            </button>
+                            <button class="btn btn-primary" id="processUrlsBtn" style="display: none;">
+                                <span>🚀</span>
+                                <span>Processar URLs</span>
+                            </button>
+                            <button class="btn btn-secondary" id="clearUrlsBtn">
+                                <span>🗑️</span>
+                                <span>Limpar Resultados</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="results-section">
+                        <h2>📊 Resultados</h2>
+                        <div id="results">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">📭</div>
+                                <p>Nenhum resultado ainda. Adicione URLs para processar.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="logs-section">
+                        <h2>📋 Logs de Execução</h2>
+                        <div class="logs-container">
+                            <div id="logsContent" class="logs-content">
+                                <div class="log-entry">Aguardando processamento...</div>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                onMount: initLeroyMerlinPage
             },
             outras: {
                 title: 'Outras Integrações',
@@ -859,6 +977,11 @@
             } else if (hash === '/integracoes/sams') {
                 page = pages.samsClub;
                 document.getElementById('nav-sams-club').classList.add('active');
+                document.getElementById('nav-integrations').classList.add('active', 'expanded');
+                document.querySelector('#nav-integrations + .nav-submenu').classList.add('open');
+            } else if (hash === '/integracoes/leroy') {
+                page = pages.leroyMerlin;
+                document.getElementById('nav-leroy-merlin').classList.add('active');
                 document.getElementById('nav-integrations').classList.add('active', 'expanded');
                 document.querySelector('#nav-integrations + .nav-submenu').classList.add('open');
             } else if (hash === '/integracoes/outras') {
@@ -905,11 +1028,17 @@
             const clearBtn = document.getElementById('clearBtn');
             const productsContainer = document.getElementById('productsContainer');
             const resultsDiv = document.getElementById('results');
+            const logsContent = document.getElementById('logsContent');
+
+            let eventSource = null;
 
             // Reset state
             batchProducts = [];
             productIdCounter = 1;
             resultCounter = 1;
+
+            // Initialize logs
+            logsContent.innerHTML = '<div class="log-entry">Aguardando processamento...</div>';
 
             // Initialize with one product
             addProduct();
@@ -927,6 +1056,9 @@
                 processBatchBtn.disabled = true;
                 processBatchBtn.innerHTML = '<span>⏳</span><span>Processando...</span>';
 
+                // Start log streaming
+                startLogStreaming();
+
                 const formData = new FormData();
                 
                 productsWithFiles.forEach((product, index) => {
@@ -943,7 +1075,7 @@
                 try {
                     showLoading();
 
-                    const response = await fetch('http://localhost:8000/process-batch/', {
+                    const response = await fetch('http://localhost:8000/api/sams-club/process-batch/', {
                         method: 'POST',
                         body: formData
                     });
@@ -963,6 +1095,7 @@
                 } finally {
                     processBatchBtn.disabled = false;
                     processBatchBtn.innerHTML = '<span>🚀</span><span>Processar Todos</span>';
+                    stopLogStreaming();
                 }
             });
 
@@ -1171,7 +1304,136 @@
 
                 resultsDiv.insertAdjacentHTML('afterbegin', errorHTML);
             }
+
+            function startLogStreaming() {
+                if (eventSource) {
+                    eventSource.close();
+                }
+                
+                logsContent.innerHTML = '<div class="log-entry">Iniciando processamento...</div>';
+                
+                eventSource = new EventSource('/api/sams-club/logs/stream');
+                
+                eventSource.onmessage = function(event) {
+                    try {
+                        const logData = JSON.parse(event.data);
+                        const logEntry = document.createElement('div');
+                        logEntry.className = 'log-entry';
+                        logEntry.setAttribute('data-level', logData.level);
+                        logEntry.textContent = `[${logData.timestamp}] ${logData.message}`;
+                        
+                        logsContent.appendChild(logEntry);
+                        logsContent.scrollTop = logsContent.scrollHeight;
+                    } catch (e) {
+                        console.error('Erro ao processar log:', e);
+                    }
+                };
+                
+                eventSource.onerror = function(event) {
+                    console.error('Erro no EventSource:', event);
+                    logsContent.innerHTML += '<div class="log-entry" data-level="ERROR">Erro na conexão de logs</div>';
+                };
+            }
+
+            function stopLogStreaming() {
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+            }
         }
-    </script>
-</body>
+
+    // Initialize Leroy Merlin page
+    function initLeroyMerlinPage() {
+        const form = document.getElementById('leroyMerlinForm');
+        const logsContainer = document.getElementById('leroyMerlinLogs');
+        const clearLogsBtn = document.getElementById('clearLeroyMerlinLogs');
+        const startStreamBtn = document.getElementById('startLeroyMerlinStream');
+        const stopStreamBtn = document.getElementById('stopLeroyMerlinStream');
+        let eventSource = null;
+
+        if (!form || !logsContainer) return;
+
+        // Clear logs functionality
+        if (clearLogsBtn) {
+            clearLogsBtn.addEventListener('click', () => {
+                logsContainer.innerHTML = '';
+            });
+        }
+
+        // Start log streaming
+        if (startStreamBtn) {
+            startStreamBtn.addEventListener('click', () => {
+                if (eventSource) {
+                    eventSource.close();
+                }
+
+                eventSource = new EventSource('/api/leroy_merlin/logs/stream');
+                logsContainer.innerHTML = '';
+
+                eventSource.onmessage = function(event) {
+                    const logEntry = document.createElement('div');
+                    logEntry.className = 'log-entry';
+                    logEntry.textContent = event.data;
+                    logsContainer.appendChild(logEntry);
+                    logsContainer.scrollTop = logsContainer.scrollHeight;
+                };
+
+                eventSource.onerror = function() {
+                    const errorEntry = document.createElement('div');
+                    errorEntry.className = 'log-entry error';
+                    errorEntry.textContent = 'Connection lost. Reconnecting...';
+                    logsContainer.appendChild(errorEntry);
+                    logsContainer.scrollTop = logsContainer.scrollHeight;
+                };
+
+                startStreamBtn.disabled = true;
+                stopStreamBtn.disabled = false;
+            });
+        }
+
+        // Stop log streaming
+        if (stopStreamBtn) {
+            stopStreamBtn.addEventListener('click', () => {
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+                startStreamBtn.disabled = false;
+                stopStreamBtn.disabled = true;
+            });
+        }
+
+        // Form submission
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData(form);
+            const data = {
+                url: formData.get('url'),
+                max_pages: parseInt(formData.get('max_pages')) || 1
+            };
+
+            try {
+                const response = await fetch('/api/leroy_merlin/scrape', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    alert('Scraping completed successfully!');
+                    console.log('Result:', result);
+                } else {
+                    const error = await response.text();
+                    alert('Error: ' + error);
+                }
+            } catch (error) {
+                alert('Network error: ' + error.message);
+            }
+        });
+    }
 </html>

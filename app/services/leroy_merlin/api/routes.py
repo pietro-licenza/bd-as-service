@@ -16,6 +16,7 @@ from app.services.leroy_merlin.scraper.url_extractor import extract_images_1800,
 from app.services.leroy_merlin.scraper.gemini_client import get_gemini_client
 from app.core.config import settings
 from app.shared.excel_generator import generate_standard_excel
+from app.shared.log_streamer import log_streamer, create_log_streaming_response
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -48,6 +49,10 @@ async def process_product_urls(request: ProductUrlRequest) -> BatchResponse:
     """
     logger.info(f"🚀 Starting batch processing of {len(request.urls)} URLs")
     
+    # Clear previous logs
+    log_streamer.clear_logs()
+    log_streamer.log(f"🚀 Iniciando processamento em lote de {len(request.urls)} URLs")
+    
     if not request.urls:
         raise HTTPException(status_code=400, detail="No URLs provided")
     
@@ -60,14 +65,14 @@ async def process_product_urls(request: ProductUrlRequest) -> BatchResponse:
     
     for idx, product_url in enumerate(request.urls, 1):
         try:
-            logger.info(f"⚙️  Processing product {idx}/{len(request.urls)}: {product_url}")
+            log_streamer.log(f"⚙️  Processando produto {idx}/{len(request.urls)}: {product_url[:50]}...")
             
             # Step 1: Extract title, price (highest), images using Python regex (fast, deterministic)
-            logger.info(f"📊 Extracting product data with Python regex...")
+            log_streamer.log(f"📊 Extraindo dados do produto com Python regex...")
             product_data = extract_product_data(product_url)
             
             if not product_data.get("success"):
-                logger.error(f"❌ Failed to extract basic data: {product_data.get('error')}")
+                log_streamer.log(f"❌ Falha ao extrair dados básicos: {product_data.get('error')}", "ERROR")
                 product_response = ProductData(
                     titulo=product_data.get("titulo", ""),
                     preco=product_data.get("preco", ""),
@@ -81,19 +86,19 @@ async def process_product_urls(request: ProductUrlRequest) -> BatchResponse:
                 all_products.append(product_response)
                 continue
             
-            logger.info(f"✅ Title: {product_data.get('titulo')}")
-            logger.info(f"✅ Price (HIGHEST): {product_data.get('preco')}")
-            logger.info(f"✅ Brand: {product_data.get('marca')}")
-            logger.info(f"✅ EAN: {product_data.get('ean')}")
-            logger.info(f"✅ Images: {len(product_data.get('image_urls', []))}")
+            log_streamer.log(f"✅ Título: {product_data.get('titulo')}")
+            log_streamer.log(f"✅ Preço (MAIOR): {product_data.get('preco')}")
+            log_streamer.log(f"✅ Marca: {product_data.get('marca')}")
+            log_streamer.log(f"✅ EAN: {product_data.get('ean')}")
+            log_streamer.log(f"✅ Imagens: {len(product_data.get('image_urls', []))}")
             
             # Step 2: Extract specifications and generate description using Gemini AI
-            logger.info(f"🤖 Generating professional description with AI...")
+            log_streamer.log(f"🤖 Gerando descrição profissional com IA...")
             descricao = gemini_client.extract_description_from_url(
                 product_url, 
                 product_data.get("titulo", "")
             )
-            logger.info(f"✅ Description generated ({len(descricao)} characters)")
+            log_streamer.log(f"✅ Descrição gerada ({len(descricao)} caracteres)")
             
             # Step 3: Combine results
             product_response = ProductData(
@@ -120,10 +125,10 @@ async def process_product_urls(request: ProductUrlRequest) -> BatchResponse:
                 "url_original": product_url
             })
             
-            logger.info(f"✅ Product {idx} processed successfully: {product_data.get('titulo', 'N/A')}")
+            log_streamer.log(f"✅ Produto {idx} processado com sucesso: {product_data.get('titulo', 'N/A')}")
             
         except Exception as e:
-            logger.error(f"❌ Error processing URL {product_url}: {str(e)}")
+            log_streamer.log(f"❌ Erro ao processar URL {product_url[:50]}...: {str(e)}", "ERROR")
             product_response = ProductData(
                 titulo="",
                 preco="",
@@ -161,6 +166,15 @@ async def process_product_urls(request: ProductUrlRequest) -> BatchResponse:
         total_products=len(all_products),
         excel_download_url=excel_url
     )
+
+
+@router.get("/logs/stream")
+async def stream_logs():
+    """
+    Stream logs in real-time for frontend display.
+    Returns Server-Sent Events stream.
+    """
+    return create_log_streaming_response()
 
 
 @router.get("/health")
