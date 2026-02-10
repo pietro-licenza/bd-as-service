@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BD Image Parser - Plataforma de Integrações</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --success-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            --primary-color: #667eea;
+            --primary-dark: #5568d3;
+            --secondary-color: #764ba2;
+            --success-color: #10b981;
+            --success-dark: #059669;
+            --danger-color: #ef4444;
+            --danger-dark: #dc2626;
+            --warning-color: #f59e0b;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-light: #94a3b8;
+            --bg-primary: #1e293b;
+            --bg-secondary: #0f172a;
+            --bg-tertiary: #334155;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --sidebar-width: 280px;
+            --sidebar-collapsed: 70px;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #0f172a;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            height: 100vh;
+            width: var(--sidebar-width);
+            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+            box-shadow: var(--shadow-xl);
+            z-index: 1000;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow-y: auto;
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .sidebar::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+
+        .sidebar-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: white;
+            text-decoration: none;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: #475569;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.375rem;
+        }
+
+        .logo-text {
+            font-size: 1.125rem;
+            font-weight: 700;
+        }
+
+        .sidebar-nav {
+            padding: 1rem 0;
+        }
+
+        .nav-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .nav-section-title {
+            padding: 0.5rem 1.5rem;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.625rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .nav-item {
+            margin: 0.25rem 0.75rem;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            border-radius: 10px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .nav-link.active {
+            background: #475569;
+            color: white;
+        }
+
+        .nav-icon {
+            font-size: 1.125rem;
+            width: 24px;
+            text-align: center;
+        }
+
+        .nav-text {
+            flex: 1;
+        }
+
+        .nav-arrow {
+            font-size: 0.75rem;
+            transition: transform 0.2s ease;
+        }
+
+        .nav-link.expanded .nav-arrow {
+            transform: rotate(90deg);
+        }
+
+        .nav-submenu {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .nav-submenu.open {
+            max-height: 500px;
+        }
+
+        .nav-subitem {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.625rem 1rem 0.625rem 3.25rem;
+            color: rgba(255, 255, 255, 0.6);
+            text-decoration: none;
+            border-radius: 8px;
+            margin: 0.25rem 0.75rem;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            font-size: 0.775rem;
+        }
+
+        .nav-subitem:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .nav-subitem.active {
+            background: rgba(71, 85, 105, 0.3);
+            color: white;
+        }
+
+        /* Main Content */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            min-height: 100vh;
+            transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .topbar {
+            background: #1e293b;
+            height: 70px;
+            display: flex;
+            align-items: center;
+            padding: 0 2rem;
+            box-shadow: var(--shadow-sm);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .page-title {
+            font-size: 1.375rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .content-area {
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Page Header */
+        .page-header {
+            margin-bottom: 2rem;
+        }
+
+        .page-header h1 {
+            font-size: 1.875rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .page-header p {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        /* Upload Section */
+        .upload-section {
+            background: var(--bg-primary);
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: var(--shadow-md);
+            margin-bottom: 2rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .upload-section h2 {
+            color: var(--text-primary);
+            font-size: 1.375rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .upload-section > p {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+            font-size: 0.825rem;
+            line-height: 1.6;
+        }
+
+        /* Product Card */
+        .product-card {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 1.75rem;
+            margin-bottom: 1.25rem;
+            border: 2px solid var(--border-color);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .product-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: #475569;
+            transition: width 0.3s ease;
+        }
+
+        .product-card:hover {
+            border-color: #475569;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .product-card:hover::before {
+            width: 8px;
+        }
+
+        .product-card h3 {
+            color: var(--text-primary);
+            margin-bottom: 1.25rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+        .product-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .file-count {
+            background: #334155;
+            color: var(--text-secondary);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .remove-btn {
+            background: rgba(239, 68, 68, 0.15);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .remove-btn:hover {
+            background: rgba(239, 68, 68, 0.25);
+            border-color: rgba(239, 68, 68, 0.5);
+        }
+
+        /* File Input */
+        .file-input-wrapper {
+            margin-bottom: 1rem;
+        }
+
+        .file-input-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem 2rem;
+            background: #475569;
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-weight: 500;
+            font-size: 0.875rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .file-input-label:hover {
+            background: #5a6a7f;
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .file-input-label:active {
+            background: #3f4c5e;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .selected-files {
+            margin-top: 1rem;
+            padding: 1.25rem;
+            background: var(--bg-primary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            min-height: 60px;
+        }
+
+        .file-list {
+            list-style: none;
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .file-list li {
+            padding: 0.875rem 1rem;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            border-left: 3px solid #475569;
+            font-size: 0.775rem;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transition: all 0.2s ease;
+        }
+
+        .file-list li:hover {
+            background: #475569;
+            border-left-color: #5a6a7f;
+        }
+
+        .file-list li::before {
+            content: '📄';
+            font-size: 1.125rem;
+        }
+
+        /* Buttons */
+        .action-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .btn {
+            padding: 1rem 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-family: inherit;
+        }
+
+        .btn:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn:active {
+            opacity: 0.8;
+        }
+
+        .btn-primary {
+            background: #475569;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5a6a7f;
+        }
+
+        .btn-primary:disabled {
+            background: #334155;
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #334155;
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:hover {
+            background: #475569;
+        }
+
+        .btn-add {
+            background: #059669;
+            color: white;
+        }
+
+        .btn-add:hover {
+            background: #047857;
+        }
+
+        /* Results Section */
+        .results-section {
+            background: var(--bg-primary);
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border-color);
+        }
+
+        .results-section h2 {
+            color: var(--text-primary);
+            margin-bottom: 1.5rem;
+            font-size: 1.375rem;
+            font-weight: 600;
+        }
+
+        .product-result {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.25rem;
+            border-left: 4px solid #475569;
+            transition: all 0.2s ease;
+        }
+
+        .product-result:hover {
+            border-left-color: #5a6a7f;
+        }
+
+        .product-result.error {
+            border-left-color: var(--danger-color);
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .product-result h3 {
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .badge {
+            background: #334155;
+            color: var(--text-secondary);
+            padding: 0.375rem 0.875rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .product-result.error .badge {
+            background: rgba(239, 68, 68, 0.15);
+            color: #fca5a5;
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+
+        .files-info {
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .product-data {
+            background: var(--bg-primary);
+            padding: 1.25rem;
+            border-radius: 8px;
+            margin-top: 0.75rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .product-data pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 0.875rem;
+            line-height: 1.6;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 3rem 1.5rem;
+        }
+
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: conic-gradient(#0000 10%, var(--primary-color));
+            -webkit-mask: radial-gradient(farthest-side, #0000 calc(100% - 6px), #000 0);
+            animation: spin 1s infinite linear;
+            margin: 0 auto 1.25rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(1turn); }
+        }
+
+        .loading-text {
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 1.5rem;
+            color: var(--text-light);
+        }
+
+        .empty-state-icon {
+            font-size: 2.875rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .empty-state p {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        /* Download Card */
+        .download-card {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--text-primary);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            text-align: center;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .download-card h3 {
+            font-size: 1.125rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .download-link {
+            background: #059669;
+            color: white;
+            padding: 0.875rem 1.75rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s ease;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .download-link:hover {
+            background: #047857;
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.mobile-open {
+                transform: translateX(0);
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .product-card h3 {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.75rem;
+            }
+
+            .product-header-actions {
+                width: 100%;
+                justify-content: space-between;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <a href="#/" class="logo">
+                <div class="logo-icon">🖼️</div>
+                <span class="logo-text">BD | AS</span>
+            </a>
+        </div>
+
+        <nav class="sidebar-nav">
+            <div class="nav-section">
+                <div class="nav-section-title">Menu Principal</div>
+                <div class="nav-item">
+                    <a href="#/" class="nav-link" id="nav-dashboard">
+                        <span class="nav-icon">📊</span>
+                        <span class="nav-text">Home</span>
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a class="nav-link" id="nav-integrations">
+                        <span class="nav-icon">🔗</span>
+                        <span class="nav-text">Integrações</span>
+                        <span class="nav-arrow">▶</span>
+                    </a>
+                    <div class="nav-submenu">
+                        <a href="#/integracoes/sams" class="nav-subitem" id="nav-sams-club">
+                            <span>🛒</span>
+                            <span>Sam's Club</span>
+                        </a>
+                        <a href="#/integracoes/leroy" class="nav-subitem" id="nav-leroy-merlin">
+                            <span>🏠</span>
+                            <span>Leroy Merlin</span>
+                        </a>
+                        <a href="#/integracoes/outras" class="nav-subitem" id="nav-other-integration">
+                            <span>📦</span>
+                            <span>Outras Integrações</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-section-title">Configurações</div>
+                <div class="nav-item">
+                    <a class="nav-link" id="nav-settings">
+                        <span class="nav-icon">⚙️</span>
+                        <span class="nav-text">Configurações</span>
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a class="nav-link" id="nav-help">
+                        <span class="nav-icon">❓</span>
+                        <span class="nav-text">Ajuda</span>
+                    </a>
+                </div>
+            </div>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Topbar -->
+        <div class="topbar">
+            <h1 class="page-title" id="page-title">Home</h1>
+        </div>
+
+        <!-- Content Area -->
+        <div class="content-area">
+            <div class="container" id="app-content">
+                <!-- Content will be dynamically loaded here -->
+
+                <!-- Dynamic content loaded by router -->
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Router System
+        const appContent = document.getElementById('app-content');
+        const pageTitle = document.getElementById('page-title');
+        
+        // Application State
+        let batchProducts = [];
+        let productIdCounter = 1;
+        let resultCounter = 1;
+
+        // Page Templates
+        const pages = {
+            home: {
+                title: 'Home',
+                render: () => `
+                    <div style="text-align: center; padding: 4rem 2rem;">
+                        <h1 style="font-size: 2.875rem; color: var(--text-primary); margin-bottom: 1rem;">👋 Bem-vindo ao BD | AS</h1>
+                        <p style="font-size: 1.125rem; color: var(--text-secondary); margin-bottom: 2rem;">Plataforma de Integração e Automação</p>
+                        <div style="max-width: 600px; margin: 0 auto; background: var(--bg-primary); padding: 2rem; border-radius: 16px; box-shadow: var(--shadow-md);">
+                            <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Selecione uma opção no menu lateral para começar.</p>
+                            <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                                <a href="#/integracoes/sams" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 1rem 2rem; background: var(--primary-gradient); color: white; text-decoration: none; border-radius: 12px; font-weight: 600; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+                                    <span>🛒</span>
+                                    <span>Sam's Club</span>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `
+            },
+            samsClub: {
+                title: 'Integrações - Sam\'s Club',
+                render: () => `
+                    <div class="page-header">
+                        <h1>🛒 Processador de Imagens Sam's Club</h1>
+                        <p>Análise inteligente de produtos com IA para extração automática de informações</p>
+                    </div>
+
+                    <div class="upload-section">
+                        <h2>Processar Produtos</h2>
+                        <p>Adicione produtos e suas respectivas imagens. Nosso sistema de IA irá extrair automaticamente todas as informações relevantes.</p>
+                        
+                        <div id="productsContainer"></div>
+                        
+                        <div class="action-buttons">
+                            <button class="btn btn-add" id="addProductBtn">
+                                <span>➕</span>
+                                <span>Adicionar Produto</span>
+                            </button>
+                            <button class="btn btn-primary" id="processBatchBtn" style="display: none;">
+                                <span>🚀</span>
+                                <span>Processar Todos</span>
+                            </button>
+                            <button class="btn btn-secondary" id="clearBtn">
+                                <span>🗑️</span>
+                                <span>Limpar Resultados</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="results-section">
+                        <h2>📊 Resultados</h2>
+                        <div id="results">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">📭</div>
+                                <p>Nenhum resultado ainda. Adicione produtos e imagens para processar.</p>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                onMount: initSamsClubPage
+            },
+            outras: {
+                title: 'Outras Integrações',
+                render: () => `
+                    <div style="text-align: center; padding: 4rem 2rem;">
+                        <h1 style="font-size: 1.875rem; color: var(--text-primary); margin-bottom: 1rem;">📦 Outras Integrações</h1>
+                        <p style="font-size: 1rem; color: var(--text-secondary);">Em breve, novas integrações estarão disponíveis aqui.</p>
+                    </div>
+                `
+            }
+        };
+
+        // Router
+        function router() {
+            const hash = window.location.hash.slice(1) || '/';
+            let page;
+
+            // Clear active states
+            document.querySelectorAll('.nav-link, .nav-subitem').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            if (hash === '/') {
+                page = pages.home;
+                document.getElementById('nav-dashboard').classList.add('active');
+            } else if (hash === '/integracoes/sams') {
+                page = pages.samsClub;
+                document.getElementById('nav-sams-club').classList.add('active');
+                document.getElementById('nav-integrations').classList.add('active', 'expanded');
+                document.querySelector('#nav-integrations + .nav-submenu').classList.add('open');
+            } else if (hash === '/integracoes/outras') {
+                page = pages.outras;
+                document.getElementById('nav-other-integration').classList.add('active');
+                document.getElementById('nav-integrations').classList.add('active', 'expanded');
+                document.querySelector('#nav-integrations + .nav-submenu').classList.add('open');
+            } else {
+                page = pages.home;
+            }
+
+            pageTitle.textContent = page.title;
+            appContent.innerHTML = page.render();
+            
+            if (page.onMount) {
+                page.onMount();
+            }
+        }
+
+        // Sidebar Navigation Toggle
+        document.getElementById('nav-integrations').addEventListener('click', function(e) {
+            if (!e.target.closest('a[href]')) {
+                e.preventDefault();
+                const submenu = this.nextElementSibling;
+                
+                if (submenu.classList.contains('open')) {
+                    submenu.classList.remove('open');
+                    this.classList.remove('expanded');
+                } else {
+                    submenu.classList.add('open');
+                    this.classList.add('expanded');
+                }
+            }
+        });
+
+        // Initialize router
+        window.addEventListener('hashchange', router);
+        window.addEventListener('load', router);
+
+        // Sam's Club Page Logic
+        function initSamsClubPage() {
+            const addProductBtn = document.getElementById('addProductBtn');
+            const processBatchBtn = document.getElementById('processBatchBtn');
+            const clearBtn = document.getElementById('clearBtn');
+            const productsContainer = document.getElementById('productsContainer');
+            const resultsDiv = document.getElementById('results');
+
+            // Reset state
+            batchProducts = [];
+            productIdCounter = 1;
+            resultCounter = 1;
+
+            // Initialize with one product
+            addProduct();
+
+            // Add product button
+            addProductBtn.addEventListener('click', () => {
+                addProduct();
+            });
+
+            // Process batch
+            processBatchBtn.addEventListener('click', async () => {
+                const productsWithFiles = batchProducts.filter(p => p.files.length > 0);
+                if (productsWithFiles.length === 0) return;
+
+                processBatchBtn.disabled = true;
+                processBatchBtn.innerHTML = '<span>⏳</span><span>Processando...</span>';
+
+                const formData = new FormData();
+                
+                productsWithFiles.forEach((product, index) => {
+                    product.files.forEach((file, fileIndex) => {
+                        const newFile = new File(
+                            [file], 
+                            `product${index + 1}_img${fileIndex + 1}.${file.name.split('.').pop()}`, 
+                            { type: file.type }
+                        );
+                        formData.append('files', newFile);
+                    });
+                });
+
+                try {
+                    showLoading();
+
+                    const response = await fetch('http://localhost:8000/process-batch/', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+                    displayResults(data);
+
+                    // Clear products
+                    batchProducts = [];
+                    productsContainer.innerHTML = '';
+                    productIdCounter = 1;
+                    addProduct();
+                    updateUI();
+
+                } catch (error) {
+                    displayError(error.message);
+                } finally {
+                    processBatchBtn.disabled = false;
+                    processBatchBtn.innerHTML = '<span>🚀</span><span>Processar Todos</span>';
+                }
+            });
+
+            // Clear button
+            clearBtn.addEventListener('click', () => {
+                resultsDiv.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <p>Nenhum resultado ainda. Adicione produtos e imagens para processar.</p>
+                    </div>
+                `;
+                resultCounter = 1;
+            });
+
+            // Helper Functions
+            function addProduct() {
+                const productId = productIdCounter++;
+                const productDiv = document.createElement('div');
+                productDiv.className = 'product-card';
+                productDiv.id = `product-${productId}`;
+                
+                productDiv.innerHTML = `
+                    <h3>
+                        <span>📦 Produto #${productId}</span>
+                        <div class="product-header-actions">
+                            <span class="file-count" id="count-${productId}">
+                                <span>📸</span>
+                                <span>0 imagens</span>
+                            </span>
+                            <button class="remove-btn" data-product-id="${productId}">
+                                <span>❌</span>
+                                <span>Remover</span>
+                            </button>
+                        </div>
+                    </h3>
+                    <div class="file-input-wrapper">
+                        <label for="fileInput-${productId}" class="file-input-label">
+                            <span>📁</span>
+                            <span>Selecionar Imagens</span>
+                        </label>
+                        <input type="file" id="fileInput-${productId}" multiple accept="image/*">
+                    </div>
+                    <div class="selected-files" id="files-${productId}">
+                        <p style="color: var(--text-light); margin: 0;">Nenhuma imagem selecionada</p>
+                    </div>
+                `;
+                
+                productsContainer.appendChild(productDiv);
+                batchProducts.push({ id: productId, files: [] });
+                
+                // Add event listeners
+                const input = document.getElementById(`fileInput-${productId}`);
+                input.addEventListener('change', (e) => {
+                    handleFileSelect(productId, e.target.files);
+                });
+
+                const removeBtn = productDiv.querySelector('.remove-btn');
+                removeBtn.addEventListener('click', () => removeProduct(productId));
+                
+                updateUI();
+            }
+
+            function removeProduct(productId) {
+                const productDiv = document.getElementById(`product-${productId}`);
+                if (productDiv) {
+                    productDiv.style.opacity = '0';
+                    productDiv.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        productDiv.remove();
+                    }, 200);
+                }
+                
+                batchProducts = batchProducts.filter(p => p.id !== productId);
+                updateUI();
+            }
+
+            function handleFileSelect(productId, files) {
+                const product = batchProducts.find(p => p.id === productId);
+                if (!product) return;
+                
+                product.files = Array.from(files);
+                updateFileList(productId);
+                updateUI();
+            }
+
+            function updateFileList(productId) {
+                const product = batchProducts.find(p => p.id === productId);
+                if (!product) return;
+                
+                const filesDiv = document.getElementById(`files-${productId}`);
+                const countSpan = document.getElementById(`count-${productId}`);
+                
+                if (product.files.length === 0) {
+                    filesDiv.innerHTML = '<p style="color: var(--text-light); margin: 0;">Nenhuma imagem selecionada</p>';
+                    countSpan.innerHTML = '<span>📸</span><span>0 imagens</span>';
+                    return;
+                }
+                
+                const fileList = product.files.map(file => 
+                    `<li>${file.name} <span style="color: var(--text-secondary);">(${(file.size / 1024).toFixed(1)} KB)</span></li>`
+                ).join('');
+                
+                filesDiv.innerHTML = `<ul class="file-list">${fileList}</ul>`;
+                countSpan.innerHTML = `<span>📸</span><span>${product.files.length} imagem(ns)</span>`;
+            }
+
+            function updateUI() {
+                const totalFiles = batchProducts.reduce((sum, p) => sum + p.files.length, 0);
+                processBatchBtn.style.display = totalFiles > 0 ? 'inline-flex' : 'none';
+            }
+
+            function showLoading() {
+                const loadingHTML = `
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p class="loading-text">✨ Processando imagens com IA...</p>
+                        <p style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem;">
+                            Isso pode levar alguns instantes
+                        </p>
+                    </div>
+                `;
+                
+                if (resultsDiv.querySelector('.empty-state')) {
+                    resultsDiv.innerHTML = loadingHTML;
+                } else {
+                    resultsDiv.insertAdjacentHTML('afterbegin', loadingHTML);
+                }
+            }
+
+            function displayResults(data) {
+                const loading = resultsDiv.querySelector('.loading');
+                const emptyState = resultsDiv.querySelector('.empty-state');
+                if (loading) loading.remove();
+                if (emptyState) emptyState.remove();
+
+                // Add Excel download link if available
+                if (data.excel_download_url) {
+                    const downloadHTML = `
+                        <div class="download-card">
+                            <h3>
+                                <span>📊</span>
+                                <span>Relatório Excel Gerado com Sucesso!</span>
+                            </h3>
+                            <a href="${data.excel_download_url}" download class="download-link">
+                                <span>⬇️</span>
+                                <span>Download dos Resultados em Excel</span>
+                            </a>
+                        </div>
+                    `;
+                    resultsDiv.insertAdjacentHTML('afterbegin', downloadHTML);
+                }
+
+                data.products.forEach(product => {
+                    let geminiData = product.gemini_response;
+                    
+                    if (!product.error) {
+                        try {
+                            geminiData = JSON.parse(geminiData);
+                        } catch (e) {
+                            // Keep as string if can't parse
+                        }
+                    }
+
+                    const isError = product.error !== undefined && product.error !== null;
+                    const resultHTML = `
+                        <div class="product-result ${isError ? 'error' : ''}">
+                            <h3>
+                                <span>${isError ? '❌' : '✅'} Produto #${resultCounter++}</span>
+                                <span class="badge">
+                                    <span>📸</span>
+                                    <span>${product.num_images} imagem(ns)</span>
+                                </span>
+                            </h3>
+                            <div class="files-info">
+                                📁 Arquivos: ${product.filenames.join(', ')}
+                            </div>
+                            <div class="product-data">
+                                ${isError ? 
+                                    `<p style="color: var(--danger-color); font-weight: 500; margin: 0;"><strong>⚠️ Erro:</strong> ${product.error}</p>` :
+                                    `<pre>${JSON.stringify(geminiData, null, 2)}</pre>`
+                                }
+                            </div>
+                        </div>
+                    `;
+
+                    resultsDiv.insertAdjacentHTML('afterbegin', resultHTML);
+                });
+            }
+
+            function displayError(message) {
+                const loading = resultsDiv.querySelector('.loading');
+                if (loading) loading.remove();
+
+                const errorHTML = `
+                    <div class="product-result error">
+                        <h3>
+                            <span>❌ Erro no Processamento</span>
+                        </h3>
+                        <div class="product-data">
+                            <p style="color: var(--danger-color); font-weight: 500; margin: 0;">
+                                <strong>⚠️ Erro:</strong> ${message}
+                            </p>
+                        </div>
+                    </div>
+                `;
+
+                resultsDiv.insertAdjacentHTML('afterbegin', errorHTML);
+            }
+        }
+    </script>
+</body>
+</html>

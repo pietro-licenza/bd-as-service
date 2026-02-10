@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+python-multipart
+pyyaml
+google-generativeai
+Pillow
+google-cloud-storage
+google-cloud-secret-manager
+openpyxl
+jinja2
+pydantic-settings
+requests
+beautifulsoup4

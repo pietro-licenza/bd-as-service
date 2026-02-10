@@ -1,0 +1,30 @@
+"""
+Web routes for serving HTML pages
+"""
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from app.core.config import settings
+
+router = APIRouter(tags=["Web Pages"])
+
+# Setup templates
+templates = Jinja2Templates(directory=str(settings.TEMPLATES_DIR))
+
+
+@router.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    """Home page"""
+    return templates.TemplateResponse("home.html", {"request": request})
+
+
+@router.get("/integracoes/sams", response_class=HTMLResponse)
+async def sams_club(request: Request):
+    """Sam's Club integration page"""
+    return templates.TemplateResponse("services/sams_club.html", {"request": request})
+
+
+@router.get("/integracoes/outras", response_class=HTMLResponse)
+async def outras_integracoes(request: Request):
+    """Other integrations page"""
+    return templates.TemplateResponse("services/outras.html", {"request": request})

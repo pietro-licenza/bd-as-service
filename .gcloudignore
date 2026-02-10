@@ -1,0 +1,54 @@
+# Files to ignore during gcloud builds
+.git/
+.gitignore
+README.md
+DEPLOY.md
+.env.example
+deploy.sh
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+# Local development
+.env
+.env.local
+.env.development
+.env.test
+# Test files
+tests/
+test_*.py
+*_test.py
+# Config files with sensitive data
+bd_image_parser_service_account.json
+config/config.yaml
