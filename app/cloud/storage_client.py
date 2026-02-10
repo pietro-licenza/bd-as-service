@@ -20,6 +20,11 @@ class StorageClient:
         self.bucket_name = settings.GCP_STORAGE_BUCKET
         self.use_secret_manager = settings.GCP_USE_SECRET_MANAGER
         
+        # Debug log
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"StorageClient init: use_secret_manager={self.use_secret_manager}, GCP_USE_SECRET_MANAGER env={os.getenv('GCP_USE_SECRET_MANAGER')}")
+        
         # Authenticate
         if self.use_secret_manager:
             # Use credentials injected as environment variable
