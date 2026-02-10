@@ -4,7 +4,6 @@ Shared Gemini API client for product data extraction.
 This module provides a centralized Gemini client used by all services
 (validation flow, Sam's Club, Leroy Merlin, etc.)
 """
-import yaml
 import os
 import json
 import logging
@@ -75,12 +74,10 @@ class GeminiClient:
     """Client for interacting with Google Gemini API."""
     
     def __init__(self):
-        """Initialize Gemini client with API key from config."""
-        config_path = os.path.join(os.path.dirname(__file__), '../../config/config.yaml')
-        with open(config_path, 'r') as config_file:
-            config = yaml.safe_load(config_file)
+        """Initialize Gemini client with API key from settings."""
+        from app.core.config import settings
         
-        genai.configure(api_key=config['gemini']['access_key'])
+        genai.configure(api_key=settings.GEMINI_API_KEY)
         self.model_text = 'gemini-2.5-flash-lite'  # For text extraction
         self.model_multimodal = 'gemini-2.5-flash-image'  # For image generation
         self.model_validation = 'gemini-2.5-flash-lite'  # For validation (cheaper)

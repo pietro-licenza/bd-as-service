@@ -2,7 +2,6 @@
 Google Cloud Storage client for uploading generated images.
 """
 import os
-import yaml
 import json
 from datetime import datetime
 from typing import List
@@ -15,13 +14,11 @@ class StorageClient:
     
     def __init__(self):
         """Initialize GCS client with service account credentials."""
-        config_path = os.path.join(os.path.dirname(__file__), '../../config/config.yaml')
-        with open(config_path, 'r') as config_file:
-            config = yaml.safe_load(config_file)
+        from app.core.config import settings
         
-        self.project_id = config['gcp']['project_id']
-        self.bucket_name = config['gcp']['storage_bucket']
-        self.use_secret_manager = config['gcp'].get('use_secret_manager', False)
+        self.project_id = settings.GCP_PROJECT_ID
+        self.bucket_name = settings.GCP_STORAGE_BUCKET
+        self.use_secret_manager = settings.GCP_USE_SECRET_MANAGER
         
         # Authenticate
         if self.use_secret_manager:
