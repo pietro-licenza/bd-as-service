@@ -40,9 +40,9 @@ steps:
       - '--set-env-vars'
       - 'DEBUG=false'
       - '--set-secrets'
-      - 'GCP_SERVICE_ACCOUNT_JSON=bd-image-parser-sa-key:latest'
+      - 'GCP_SERVICE_ACCOUNT_JSON=GCP_SERVICE_ACCOUNT_SECRET_NAME:latest'
       - '--set-secrets'
-      - 'GEMINI_API_KEY=gemini-api-key:latest'
+      - 'GEMINI_API_KEY=GEMINI_API_KEY:latest'
 
 options:
   logging: CLOUD_LOGGING_ONLY
