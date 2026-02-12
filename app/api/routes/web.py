@@ -24,6 +24,12 @@ async def sams_club(request: Request):
     return templates.TemplateResponse("services/sams_club.html", {"request": request})
 
 
+@router.get("/integracoes/sodimac", response_class=HTMLResponse)
+async def sodimac(request: Request):
+    """Sodimac integration page"""
+    return templates.TemplateResponse("services/sodimac.html", {"request": request})
+
+
 @router.get("/integracoes/outras", response_class=HTMLResponse)
 async def outras_integracoes(request: Request):
     """Other integrations page"""
