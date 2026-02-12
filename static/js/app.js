@@ -32,6 +32,10 @@ const HomeTemplate = () => `
                     <span>🏠</span>
                     <span>Leroy Merlin</span>
                 </a>
+                <a href="#/integracoes/sodimac" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 1rem 2rem; background: linear-gradient(135deg, #FF6B35 0%, #E55A2B 100%); color: white; text-decoration: none; border-radius: 12px; font-weight: 600; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+                    <span>🏪</span>
+                    <span>Sodimac</span>
+                </a>
             </div>
         </div>
     </div>
@@ -64,9 +68,10 @@ document.addEventListener('DOMContentLoaded', () => {
         onMount: initLeroyMerlinPage
     });
 
-    router.addRoute('/integracoes/outras', {
-        title: 'Outras Integrações',
-        render: OutrasTemplate
+    router.addRoute('/integracoes/sodimac', {
+        title: 'Integrações - Sodimac',
+        render: SodimacTemplate,
+        onMount: initSodimacPage
     });
 
     // Initialize sidebar toggles

@@ -1,3 +1,5 @@
+// Inicialização da página Leroy Merlin (placeholder)
+function initLeroyMerlinPage() {}
 /**
  * BD | AS Platform - Leroy Merlin Integration
  * URL-based product processing for Leroy Merlin

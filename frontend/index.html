@@ -398,6 +398,64 @@
             min-height: 60px;
         }
 
+        /* URL Input Styles for Leroy Merlin */
+        .url-input-item {
+            margin-bottom: 1rem;
+            padding: 1.25rem;
+            background: var(--bg-primary);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .url-input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .url-input-wrapper label {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        .url-input-wrapper input[type="url"] {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+        }
+
+        .url-input-wrapper input[type="url"]:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(103, 126, 234, 0.1);
+        }
+
+        .remove-url-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--danger-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .remove-url-btn:hover {
+            background: var(--danger-dark);
+        }
+
         .file-list {
             list-style: none;
             display: grid;
@@ -517,64 +575,6 @@
 
         .product-result:hover {
             border-left-color: #5a6a7f;
-        }
-
-        /* Logs Section */
-        .logs-section {
-            background: var(--bg-primary);
-            border-radius: 16px;
-            padding: 2rem;
-            box-shadow: var(--shadow-md);
-            border: 1px solid var(--border-color);
-            margin-top: 2rem;
-        }
-
-        .logs-section h2 {
-            color: var(--text-primary);
-            margin-bottom: 1.5rem;
-            font-size: 1.375rem;
-            font-weight: 600;
-        }
-
-        .logs-container {
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            border: 1px solid var(--border-color);
-            overflow: hidden;
-        }
-
-        .logs-content {
-            max-height: 300px;
-            overflow-y: auto;
-            padding: 1rem;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 0.875rem;
-            line-height: 1.5;
-        }
-
-        .log-entry {
-            color: var(--text-secondary);
-            margin-bottom: 0.25rem;
-            padding: 0.25rem 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .log-entry:last-child {
-            border-bottom: none;
-        }
-
-        .log-entry[data-level="ERROR"] {
-            color: #ef4444;
-            font-weight: 500;
-        }
-
-        .log-entry[data-level="WARNING"] {
-            color: #f59e0b;
-            font-weight: 500;
-        }
-
-        .log-entry[data-level="INFO"] {
-            color: var(--text-secondary);
         }
 
         .product-result.error {
@@ -775,6 +775,10 @@
                             <span>🏠</span>
                             <span>Leroy Merlin</span>
                         </a>
+                        <a href="#/integracoes/sodimac" class="nav-subitem" id="nav-sodimac">
+                            <span>🏪</span>
+                            <span>Sodimac</span>
+                        </a>
                         <a href="#/integracoes/outras" class="nav-subitem" id="nav-other-integration">
                             <span>📦</span>
                             <span>Outras Integrações</span>
@@ -887,15 +891,6 @@
                             </div>
                         </div>
                     </div>
-
-                    <div class="logs-section">
-                        <h2>📋 Logs de Execução</h2>
-                        <div class="logs-container">
-                            <div id="logsContent" class="logs-content">
-                                <div class="log-entry">Aguardando processamento...</div>
-                            </div>
-                        </div>
-                    </div>
                 `,
                 onMount: initSamsClubPage
             },
@@ -938,17 +933,56 @@
                             </div>
                         </div>
                     </div>
+                `,
+                onMount: initLeroyMerlinPage
+            },
+            sodimac: {
+                title: 'Integrações - Sodimac',
+                render: () => `
+                    <div class="page-header">
+                        <h1>🏪 Processador de Produtos Sodimac</h1>
+                        <p>Análise inteligente de produtos através de URLs para extração automática de informações</p>
+                    </div>
 
-                    <div class="logs-section">
-                        <h2>📋 Logs de Execução</h2>
-                        <div class="logs-container">
-                            <div id="logsContent" class="logs-content">
-                                <div class="log-entry">Aguardando processamento...</div>
+                    <div class="upload-section">
+                        <h2>Adicionar URLs de Produtos</h2>
+                        <p>Cole as URLs dos produtos da Sodimac. Nosso sistema irá extrair imagens, título, preço, marca, EAN e gerar descrições profissionais.</p>
+
+                        <div class="url-input-section">
+                            <div class="textarea-wrapper">
+                                <label for="urlsTextarea">URLs dos Produtos (uma por linha)</label>
+                                <textarea
+                                    id="urlsTextarea"
+                                    placeholder="https://www.sodimac.com.br/sodimac-br/product/123456/produto-exemplo/123456/&#10;https://www.sodimac.com.br/sodimac-br/product/789012/outro-produto/789012/&#10;..."
+                                    rows="8"
+                                ></textarea>
+                                <div class="url-count" id="urlCount">0 URLs</div>
+                            </div>
+                        </div>
+
+                        <div class="action-buttons">
+                            <button class="btn btn-primary" id="processUrlsBtn">
+                                <span>🚀</span>
+                                <span>Processar URLs</span>
+                            </button>
+                            <button class="btn btn-secondary" id="clearUrlsBtn">
+                                <span>🗑️</span>
+                                <span>Limpar</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="results-section">
+                        <h2>📊 Resultados</h2>
+                        <div id="results">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">📭</div>
+                                <p>Nenhum resultado ainda. Adicione URLs de produtos para processar.</p>
                             </div>
                         </div>
                     </div>
                 `,
-                onMount: initLeroyMerlinPage
+                onMount: initSodimacPage
             },
             outras: {
                 title: 'Outras Integrações',
@@ -984,6 +1018,11 @@
                 document.getElementById('nav-leroy-merlin').classList.add('active');
                 document.getElementById('nav-integrations').classList.add('active', 'expanded');
                 document.querySelector('#nav-integrations + .nav-submenu').classList.add('open');
+            } else if (hash === '/integracoes/sodimac') {
+                page = pages.sodimac;
+                document.getElementById('nav-sodimac').classList.add('active');
+                document.getElementById('nav-integrations').classList.add('active', 'expanded');
+                document.querySelector('#nav-integrations + .nav-submenu').classList.add('open');
             } else if (hash === '/integracoes/outras') {
                 page = pages.outras;
                 document.getElementById('nav-other-integration').classList.add('active');
@@ -995,8 +1034,10 @@
 
             pageTitle.textContent = page.title;
             appContent.innerHTML = page.render();
+            console.log(`Página renderizada: ${page.title}, onMount: ${!!page.onMount}`);
             
             if (page.onMount) {
+                console.log('Executando onMount...');
                 page.onMount();
             }
         }
@@ -1028,17 +1069,11 @@
             const clearBtn = document.getElementById('clearBtn');
             const productsContainer = document.getElementById('productsContainer');
             const resultsDiv = document.getElementById('results');
-            const logsContent = document.getElementById('logsContent');
-
-            let eventSource = null;
 
             // Reset state
             batchProducts = [];
             productIdCounter = 1;
             resultCounter = 1;
-
-            // Initialize logs
-            logsContent.innerHTML = '<div class="log-entry">Aguardando processamento...</div>';
 
             // Initialize with one product
             addProduct();
@@ -1055,9 +1090,6 @@
 
                 processBatchBtn.disabled = true;
                 processBatchBtn.innerHTML = '<span>⏳</span><span>Processando...</span>';
-
-                // Start log streaming
-                startLogStreaming();
 
                 const formData = new FormData();
                 
@@ -1095,19 +1127,7 @@
                 } finally {
                     processBatchBtn.disabled = false;
                     processBatchBtn.innerHTML = '<span>🚀</span><span>Processar Todos</span>';
-                    stopLogStreaming();
                 }
-            });
-
-            // Clear button
-            clearBtn.addEventListener('click', () => {
-                resultsDiv.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📭</div>
-                        <p>Nenhum resultado ainda. Adicione produtos e imagens para processar.</p>
-                    </div>
-                `;
-                resultCounter = 1;
             });
 
             // Helper Functions
@@ -1305,49 +1325,177 @@
                 resultsDiv.insertAdjacentHTML('afterbegin', errorHTML);
             }
 
-            function startLogStreaming() {
-                if (eventSource) {
-                    eventSource.close();
-                }
-                
-                logsContent.innerHTML = '<div class="log-entry">Iniciando processamento...</div>';
-                
-                eventSource = new EventSource('/api/sams-club/logs/stream');
-                
-                eventSource.onmessage = function(event) {
-                    try {
-                        const logData = JSON.parse(event.data);
-                        const logEntry = document.createElement('div');
-                        logEntry.className = 'log-entry';
-                        logEntry.setAttribute('data-level', logData.level);
-                        logEntry.textContent = `[${logData.timestamp}] ${logData.message}`;
-                        
-                        logsContent.appendChild(logEntry);
-                        logsContent.scrollTop = logsContent.scrollHeight;
-                    } catch (e) {
-                        console.error('Erro ao processar log:', e);
-                    }
-                };
-                
-                eventSource.onerror = function(event) {
-                    console.error('Erro no EventSource:', event);
-                    logsContent.innerHTML += '<div class="log-entry" data-level="ERROR">Erro na conexão de logs</div>';
-                };
+    // Initialize Leroy Merlin page
+    function initLeroyMerlinPage() {
+        console.log('🚀 Inicializando página Leroy Merlin...');
+
+        // Verificar se os elementos existem
+        const addUrlBtn = document.getElementById('addUrlBtn');
+        const processUrlsBtn = document.getElementById('processUrlsBtn');
+        const clearUrlsBtn = document.getElementById('clearUrlsBtn');
+        const urlsContainer = document.getElementById('urlsContainer');
+        const resultsDiv = document.getElementById('results');
+
+        console.log('Elementos encontrados:', {
+            addUrlBtn: !!addUrlBtn,
+            processUrlsBtn: !!processUrlsBtn,
+            clearUrlsBtn: !!clearUrlsBtn,
+            urlsContainer: !!urlsContainer,
+            resultsDiv: !!resultsDiv
+        });
+
+        // Teste simples de funcionalidade
+        if (addUrlBtn && urlsContainer) {
+            // Adicionar um input de URL por padrão
+            addUrlInput();
+
+            addUrlBtn.addEventListener('click', () => {
+                console.log('Botão adicionar URL clicado');
+                addUrlInput();
+            });
+
+            processUrlsBtn.addEventListener('click', () => {
+                console.log('Botão processar clicado');
+                processUrls();
+            });
+
+            clearUrlsBtn.addEventListener('click', () => {
+                console.log('Botão limpar clicado');
+                clearAll();
+            });
+        }
+
+        function addUrlInput() {
+            const urlDiv = document.createElement('div');
+            urlDiv.className = 'url-input-item';
+            urlDiv.innerHTML = `
+                <div class="url-input-wrapper">
+                    <label>URL do Produto Leroy Merlin</label>
+                    <input type="url" placeholder="https://www.leroymerlin.com.br/produto-exemplo" />
+                    <button class="remove-url-btn">
+                        <span>❌</span>
+                        <span>Remover</span>
+                    </button>
+                </div>
+            `;
+
+            urlsContainer.appendChild(urlDiv);
+            updateProcessButton();
+
+            // Event listeners
+            const input = urlDiv.querySelector('input');
+            const removeBtn = urlDiv.querySelector('.remove-url-btn');
+
+            input.addEventListener('input', updateProcessButton);
+            removeBtn.addEventListener('click', () => {
+                urlDiv.remove();
+                updateProcessButton();
+            });
+        }
+
+        function updateProcessButton() {
+            const inputs = urlsContainer.querySelectorAll('input[type="url"]');
+            const validUrls = Array.from(inputs).filter(input => input.value.trim().startsWith('http')).length;
+            processUrlsBtn.style.display = validUrls > 0 ? 'inline-flex' : 'none';
+        }
+
+        function clearAll() {
+            urlsContainer.innerHTML = '';
+            resultsDiv.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <p>Nenhum resultado ainda. Adicione URLs para processar.</p>
+                </div>
+            `;
+            addUrlInput();
+        }
+
+        async function processUrls() {
+            const inputs = urlsContainer.querySelectorAll('input[type="url"]');
+            const urls = Array.from(inputs).map(input => input.value.trim()).filter(url => url.startsWith('http'));
+
+            if (urls.length === 0) {
+                alert('Adicione pelo menos uma URL válida');
+                return;
             }
 
-            function stopLogStreaming() {
-                if (eventSource) {
-                    eventSource.close();
-                    eventSource = null;
+            processUrlsBtn.disabled = true;
+            processUrlsBtn.innerHTML = '<span>⏳</span><span>Processando...</span>';
+
+            try {
+                const response = await fetch('http://localhost:8000/api/leroy-merlin/process-urls/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urls })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Erro HTTP: ${response.status}`);
                 }
+
+                const data = await response.json();
+                displayResults(data);
+
+            } catch (error) {
+                console.error('Erro:', error);
+                displayError(error.message);
+            } finally {
+                processUrlsBtn.disabled = false;
+                processUrlsBtn.innerHTML = '<span>🚀</span><span>Processar URLs</span>';
             }
         }
 
-    // Initialize Leroy Merlin page
-    function initLeroyMerlinPage() {
-        // For now, just initialize the page - streaming will be added when processing is implemented
-        console.log('Leroy Merlin page initialized');
+        function displayResults(data) {
+            resultsDiv.innerHTML = '';
+
+            if (data.excel_download_url) {
+                const downloadHTML = `
+                    <div class="download-card">
+                        <h3><span>📊</span><span>Relatório Excel Gerado!</span></h3>
+                        <a href="${data.excel_download_url}" download class="download-link">
+                            <span>⬇️</span><span>Download Excel</span>
+                        </a>
+                    </div>
+                `;
+                resultsDiv.insertAdjacentHTML('beforeend', downloadHTML);
+            }
+
+            data.products.forEach((product, index) => {
+                const resultHTML = `
+                    <div class="product-result ${product.error ? 'error' : ''}">
+                        <h3>
+                            <span>${product.error ? '❌' : '✅'} Produto #${index + 1}</span>
+                            <span class="badge"><span>🏠</span><span>Leroy Merlin</span></span>
+                        </h3>
+                        ${product.error ?
+                            `<p style="color: var(--danger-color);"><strong>Erro:</strong> ${product.error}</p>` :
+                            `
+                            <div class="product-data">
+                                <h4>${product.titulo}</h4>
+                                <p style="color: var(--success-color); font-size: 1.5rem; font-weight: bold;">${product.preco}</p>
+                                ${product.marca ? `<p><strong>Marca:</strong> ${product.marca}</p>` : ''}
+                                ${product.image_urls && product.image_urls.length > 0 ?
+                                    `<p><strong>Imagens:</strong> ${product.image_urls.length} encontradas</p>` : ''}
+                            </div>
+                            `
+                        }
+                    </div>
+                `;
+                resultsDiv.insertAdjacentHTML('beforeend', resultHTML);
+            });
+        }
+
+        function displayError(message) {
+            const errorHTML = `
+                <div class="product-result error">
+                    <h3><span>❌ Erro no Processamento</span></h3>
+                    <p style="color: var(--danger-color);"><strong>Erro:</strong> ${message}</p>
+                </div>
+            `;
+            resultsDiv.insertAdjacentHTML('beforeend', errorHTML);
+        }
     }
+}
     </script>
 </body>
 </html>

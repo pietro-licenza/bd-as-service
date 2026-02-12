@@ -69,8 +69,8 @@ class Router {
         } else if (hash === '/integracoes/leroy') {
             document.getElementById('nav-leroy-merlin')?.classList.add('active');
             this.expandIntegrations();
-        } else if (hash === '/integracoes/outras') {
-            document.getElementById('nav-other-integration')?.classList.add('active');
+        } else if (hash === '/integracoes/sodimac') {
+            document.getElementById('nav-sodimac')?.classList.add('active');
             this.expandIntegrations();
         }
     }

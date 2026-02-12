@@ -14,6 +14,7 @@ from app.api.routes import router as api_router
 from app.api.routes.web import router as web_router
 from app.services.sams_club.api.routes import router as sams_club_router
 from app.services.leroy_merlin.api.routes import router as leroy_merlin_router
+from app.services.sodimac.api.routes import router as sodimac_router
 
 # Configure logging
 logging.basicConfig(
@@ -47,6 +48,7 @@ app.add_middleware(
 app.include_router(api_router, tags=["API"])
 app.include_router(sams_club_router, tags=["Sam's Club"])
 app.include_router(leroy_merlin_router, tags=["Leroy Merlin"])
+app.include_router(sodimac_router, tags=["Sodimac"])
 app.include_router(web_router, tags=["Web"])
 
 # Mount static files (CSS, JS, images)
