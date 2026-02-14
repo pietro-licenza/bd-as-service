@@ -2,7 +2,8 @@
 Web routes for serving HTML pages
 """
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+import os
 from fastapi.templating import Jinja2Templates
 from app.core.config import settings
 
@@ -34,3 +35,10 @@ async def sodimac(request: Request):
 async def outras_integracoes(request: Request):
     """Other integrations page"""
     return templates.TemplateResponse("services/outras.html", {"request": request})
+
+@router.get("/login", response_class=HTMLResponse)
+async def login_page():
+    # Caminho absoluto correto para o login.html na raiz do projeto
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    login_path = os.path.join(base_dir, "frontend", "login.html")
+    return FileResponse(login_path, media_type="text/html")

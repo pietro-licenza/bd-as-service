@@ -27,26 +27,26 @@ class Router {
      * Navigate to the current hash route
      */
     navigate() {
+        // Proteção: se não estiver logado, redireciona para /login
+        const token = localStorage.getItem('access_token');
+        const isLoginPage = window.location.pathname === '/login';
+        if (!token && !isLoginPage) {
+            window.location.href = '/login';
+            return;
+        }
+
         const hash = window.location.hash.slice(1) || '/';
         const route = this.routes.get(hash) || this.routes.get('/');
-        
         if (!route) {
             console.error('No route found for:', hash);
             return;
         }
-
-        // Update active navigation states
         this.updateNavigation(hash);
-        
-        // Update page content
         this.pageTitle.textContent = route.title;
         this.appContent.innerHTML = route.render();
-        
-        // Call onMount callback if exists
         if (route.onMount && typeof route.onMount === 'function') {
             route.onMount();
         }
-        
         this.currentRoute = hash;
     }
 

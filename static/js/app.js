@@ -50,6 +50,13 @@ const OutrasTemplate = () => `
 
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
+    // Proteção global: se não estiver logado, redireciona para /login
+    const isLoginPage = window.location.pathname === '/login';
+    const token = localStorage.getItem('access_token');
+    if (!token && !isLoginPage) {
+        window.location.href = '/login';
+        return;
+    }
     // Register routes
     router.addRoute('/', {
         title: 'Home',

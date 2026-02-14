@@ -10,7 +10,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api.routes import router as api_router
+
+from app.api import auth_router, main_router
 from app.api.routes.web import router as web_router
 from app.services.sams_club.api.routes import router as sams_club_router
 from app.services.leroy_merlin.api.routes import router as leroy_merlin_router
@@ -44,8 +45,10 @@ app.add_middleware(
     allow_headers=settings.CORS_ALLOW_HEADERS,
 )
 
+
 # Include routers
-app.include_router(api_router, tags=["API"])
+app.include_router(auth_router, prefix="/api", tags=["Auth"])
+app.include_router(main_router, tags=["API"])
 app.include_router(sams_club_router, tags=["Sam's Club"])
 app.include_router(leroy_merlin_router, tags=["Leroy Merlin"])
 app.include_router(sodimac_router, tags=["Sodimac"])

@@ -7,12 +7,14 @@ import tempfile
 import logging
 from typing import List
 from datetime import datetime
-from fastapi import UploadFile, File
+from fastapi import UploadFile, File, Depends
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
+
 from app.models.schemas import BatchResponse, BatchProductResponse
 from app.shared.gemini_client import send_to_gemini, generate_product_images_with_gemini
+from app.core.auth import get_current_user
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -96,7 +98,7 @@ def generate_excel_report(products_data: List[dict], filename: str) -> str:
     return filepath
 
 
-async def process_batch_endpoint(files: List[UploadFile] = File(...)) -> BatchResponse:
+async def process_batch_endpoint(files: List[UploadFile] = File(...), user: dict = Depends(get_current_user)) -> BatchResponse:
     """
     Process multiple products in batch.
     

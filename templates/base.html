@@ -82,8 +82,15 @@
     <!-- Main Content -->
     <main class="main-content">
         <!-- Topbar -->
-        <div class="topbar">
+
+        <div class="topbar" style="display: flex; align-items: center; justify-content: space-between;">
             <h1 class="page-title" id="page-title">{% block page_title %}Home{% endblock %}</h1>
+            <div id="user-info" style="font-size: 0.98rem; color: #444; display: flex; align-items: center; gap: 0.4rem;">
+                <span id="welcome-user" style="color: #a7a7a7; font-weight: 500; opacity: 0.85;">Bem-vindo</span>
+                <span id="username" style="font-weight: 600; color: #3b82f6; font-size: 1rem;"> </span>
+                <span style="color: #bbb; font-size: 1rem;">|</span>
+                <a id="logout-btn" href="#" style="color: #ef4444; font-weight: 600; text-decoration: underline; cursor: pointer; font-size: 1rem; letter-spacing: 0.5px;">Logout</a>
+            </div>
         </div>
 
         <!-- Content Area -->
@@ -102,6 +109,31 @@
     <script src="/static/js/pages/leroyMerlin.js"></script>
     <script src="/static/js/pages/sodimac.js"></script>
     <script src="/static/js/app.js"></script>
+    <script>
+    // Exibe usuário logado e faz logout
+    document.addEventListener('DOMContentLoaded', function() {
+        const btn = document.getElementById('logout-btn');
+        const usernameSpan = document.getElementById('username');
+        // Decodifica o JWT para pegar o username
+        function parseJwt (token) {
+            try {
+                return JSON.parse(atob(token.split('.')[1]));
+            } catch (e) { return {}; }
+        }
+        const token = localStorage.getItem('access_token');
+        if (token && usernameSpan) {
+            const payload = parseJwt(token);
+            usernameSpan.textContent = payload.sub || '';
+        }
+        if (btn) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                localStorage.removeItem('access_token');
+                window.location.href = '/login';
+            });
+        }
+    });
+    </script>
     
     {% block extra_js %}{% endblock %}
 </body>

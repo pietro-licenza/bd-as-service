@@ -11,3 +11,9 @@ jinja2
 pydantic-settings
 requests
 beautifulsoup4
+
+# Autenticação JWT e utilitários
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+uvicorn

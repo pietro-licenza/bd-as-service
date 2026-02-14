@@ -261,7 +261,19 @@ function initSodimacPage() {
 
         let imagesHTML = '';
         if (product.image_urls && product.image_urls.length > 0) {
-            const imageCards = product.image_urls.map((url, idx) => `
+            // Ajuste: cortar cada URL após a primeira vírgula e trocar w=76 por w=1036 se presente
+            const cleanImageUrls = product.image_urls.map(url => {
+                let cleanUrl = url;
+                if (typeof cleanUrl === 'string' && cleanUrl.includes(',')) {
+                    cleanUrl = cleanUrl.split(',')[0].trim();
+                }
+                // Se for uma imagem Sodimac com w=76 ou w=120, troca para w=1036
+                if (typeof cleanUrl === 'string') {
+                    cleanUrl = cleanUrl.replace(/w=(76|120)/, 'w=1036');
+                }
+                return cleanUrl;
+            });
+            const imageCards = cleanImageUrls.map((url, idx) => `
                 <div style="flex: 1; min-width: 150px; max-width: 200px;">
                     <img src="${url}" alt="Imagem ${idx + 1}" style="width: 100%; border-radius: 8px; box-shadow: var(--shadow-sm); cursor: pointer;" onclick="window.open('${url}', '_blank')">
                     <p style="text-align: center; font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.5rem;">Imagem ${idx + 1}</p>
@@ -270,7 +282,7 @@ function initSodimacPage() {
             imagesHTML = `
                 <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
                     <h4 style="color: var(--text-primary); margin-bottom: 0.75rem; font-size: 1rem;">
-                        🖼️ Imagens do Produto (${product.image_urls.length})
+                        🖼️ Imagens do Produto (${cleanImageUrls.length})
                     </h4>
                     <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
                         ${imageCards}
