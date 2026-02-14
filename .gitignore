@@ -1,3 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.vscode/
+*.egg-info/
+dist/
+build/
+venv/
+env/
+*.sqlite3
+*.log
+node_modules/
+*.DS_Store
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

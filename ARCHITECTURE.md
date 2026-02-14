@@ -1,3 +1,77 @@
+
+# Arquitetura e Funcionamento do Projeto (FastAPI)
+
+## O que é FastAPI?
+
+FastAPI é um framework moderno, rápido (high performance) para construção de APIs com Python 3.7+ baseado em padrões do tipo Python type hints. Ele é muito utilizado no mercado por sua simplicidade, performance e recursos nativos como validação automática de dados, documentação interativa e suporte a autenticação JWT.
+
+### Como funciona o FastAPI?
+
+- **Roteamento**: Você define endpoints (rotas) usando decoradores (@app.get, @app.post, etc). Cada rota é uma função Python que recebe requisições HTTP e retorna respostas (JSON, HTML, arquivos, etc).
+- **Validação de dados**: Utiliza Pydantic para validar e serializar dados de entrada e saída automaticamente.
+- **Documentação automática**: Gera docs interativas (Swagger/OpenAPI) em `/docs` e `/redoc`.
+- **Injeção de dependências**: Permite declarar dependências (ex: autenticação, banco) de forma simples e reutilizável.
+- **Performance**: Baseado em Starlette e Uvicorn, é um dos frameworks Python mais rápidos.
+- **Assíncrono**: Suporte nativo a async/await para alta performance em I/O.
+
+### Como o FastAPI está aplicado neste projeto?
+
+#### 1. main.py (Ponto de entrada)
+O arquivo `main.py` inicializa a aplicação FastAPI, configura CORS, inclui todos os routers (rotas) dos serviços e monta arquivos estáticos e de exportação. Exemplo:
+
+```python
+from fastapi import FastAPI
+from app.services.sams_club.api.routes import router as sams_club_router
+
+app = FastAPI()
+app.include_router(sams_club_router)
+```
+
+#### 2. Routers e Modularização
+Cada microserviço (ex: sams_club, leroy_merlin, sodimac) tem seu próprio arquivo/pasta de rotas (routes.py), schemas (modelos de dados), e integrações (ex: client.py para APIs externas). Isso facilita manutenção, testes e escalabilidade.
+
+#### 3. Schemas (Pydantic)
+Todos os dados recebidos/enviados pela API são validados por modelos Pydantic. Isso garante segurança e padronização dos dados.
+
+#### 4. Configuração Centralizada
+O arquivo `app/core/config.py` centraliza variáveis de ambiente, diretórios, chaves e configurações globais.
+
+#### 5. Templates e Frontend
+Templates HTML (Jinja2) ficam em `templates/` e arquivos estáticos (JS, CSS) em `static/`. O FastAPI serve essas páginas e arquivos, permitindo integração entre backend e frontend.
+
+#### 6. Shared
+Funções/utilitários usados por vários serviços ficam em `app/shared/` (ex: geração de Excel, clientes de IA).
+
+### Hierarquia de Pastas Explicada
+
+- **app/**: Código principal do backend.
+  - **core/**: Configurações globais, autenticação, utilitários centrais.
+  - **api/**: Rotas principais, autenticação, web (HTML), health check.
+  - **services/**: Cada integração/microserviço tem sua pasta (sams_club, leroy_merlin, sodimac), com subpastas para API, schemas, integrações externas, etc.
+  - **models/**: Schemas e modelos de dados globais.
+  - **shared/**: Utilitários e clientes compartilhados.
+- **config/**: Arquivos de configuração YAML.
+- **static/**: Frontend (JS, CSS, imagens).
+- **templates/**: Templates HTML (Jinja2).
+- **exports/**: Arquivos gerados para download (Excel, etc).
+
+### Fluxo de uma Requisição FastAPI
+1. Usuário faz requisição (ex: POST /api/sams-club/process-batch/)
+2. FastAPI roteia para a função Python correta (definida em routes.py)
+3. Dados são validados automaticamente por Pydantic
+4. Lógica de negócio é executada (ex: processamento de imagens, chamada à IA)
+5. Resposta é serializada e enviada ao frontend
+
+### Dicas para quem está começando com FastAPI
+- Use e abuse dos modelos Pydantic para garantir dados corretos.
+- Explore a documentação automática em `/docs` (Swagger UI) e `/redoc`.
+- Modularize: cada domínio/serviço em sua pasta, com rotas, schemas e integrações separados.
+- Centralize configs sensíveis em `.env` e `config.py`.
+- Use async/await para endpoints que fazem I/O intenso.
+- Consulte sempre a documentação oficial: https://fastapi.tiangolo.com/pt/
+
+---
+
 # Estrutura Profissional - BD | AS Platform
 
 ## 📋 Visão Geral
