@@ -5,7 +5,8 @@ import re
 import tempfile
 from typing import List, Dict, Any
 from datetime import datetime
-import google.generativeai as genai
+from google import genai
+from google.genai import types 
 import PIL.Image
 from app.core.config import settings
 
@@ -13,134 +14,145 @@ logger = logging.getLogger(__name__)
 
 class GeminiClient:
     def __init__(self):
-        self.model_name = getattr(settings, 'GEMINI_MODEL_MULTIMODAL', 'gemini-2.5-flash-image')
-        if settings.GEMINI_API_KEY:
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            logger.info(f"🚀 Gemini Client iniciado (Dual-Pass) com: {self.model_name}")
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self.model_extract = "models/gemini-2.5-flash-lite"
+        self.model_image = "models/gemini-2.5-flash-image" 
+        
+        # Configurações de segurança oficiais para evitar bloqueios de logotipos
+        self.safety_settings = [
+            types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
+            types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
+            types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
+            types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
+            types.SafetySetting(category="HARM_CATEGORY_CIVIC_INTEGRITY", threshold="BLOCK_NONE")
+        ]
+        
+        logger.info(f"🚀 Gemini Client iniciado. Extração: {self.model_extract} | Imagem: {self.model_image}")
 
+    def _resize_image(self, pil_img, max_size=800):
+        """Reduz a resolução da imagem para economizar tokens"""
+        w, h = pil_img.size
+        if max(w, h) > max_size:
+            logger.info(f"📏 Redimensionando: {w}x{h} -> {max_size}px")
+            pil_img.thumbnail((max_size, max_size), PIL.Image.LANCZOS)
+        return pil_img
 
     def step1_extract_product_data(self, image_paths: List[str], extract_infos: bool = True) -> Dict[str, Any]:
-        """
-        Step 1: Extração de informações do produto (nome, preço, código de barras, descrição, foto ideal).
-        Esta função é chamada quando o checkbox 'Extrair informações do produto' está marcado no frontend.
-        O prompt é fixo e otimizado para o fluxo de extração de dados do produto.
-        """
-        pil_images = []
+        """Extração de dados com descrição profissional de 3 parágrafos"""
+        processed_images = []
         try:
             for p in image_paths:
                 if p and os.path.exists(p):
-                    img = PIL.Image.open(p)
-                    if img.mode != 'RGB': img = img.convert('RGB')
-                    img.load()
-                    pil_images.append(img)
+                    img = PIL.Image.open(p).convert('RGB')
+                    img = self._resize_image(img) 
+                    processed_images.append(img)
 
-            if not pil_images:
+            if not processed_images:
                 return {"error": "Nenhuma imagem válida encontrada."}
 
-            # Prompt fixo para extração de informações (step 1)
-            if extract_infos:
-                prompt = (
-                    "You will receive 3 to 5 photos of a supermarket product. "
-                    "1. Analyze the label photo(s) and extract: product name, brand, price, and barcode."
-                    "2. Analyze the specification photo(s) and generate a professional marketplace description."
-                    "3. Among all photos, select the 'ideal product photo', meaning the clearest and sharpest front view."
-                    "Return a JSON with the fields: 'nome', 'preco', 'codigo_barras', 'descricao', 'foto_ideal_index' (index of the ideal photo, starting at 1)."
-                    "If any field is not found, return empty for it."
-                )
-                model = genai.GenerativeModel(self.model_name)
-                logger.info("📡 Step 1: Extraindo informações do produto...")
-                res_analysis = model.generate_content([prompt] + pil_images)
-                try:
-                    json_match = re.search(r'\{.*\}', res_analysis.text, re.DOTALL)
-                    if json_match:
-                        json_str = json_match.group(0)
-                        # Corrige escapes unicode inválidos
-                        json_str = re.sub(r'\\(?!["\\/bfnrtu])', r'\\', json_str)
-                        res_json = json.loads(json_str)
-                    else:
-                        res_json = {}
-                except Exception:
-                    res_json = {"raw_output": res_analysis.text}
-                return {
-                    "gemini_response": json.dumps(res_json, ensure_ascii=False),
-                    "infos_extraidas": res_json,
-                    "generated_images_urls": []
+            prompt = (
+                "Analyze the product photos and return ONLY a JSON with: 'nome', 'preco', 'codigo_barras', 'descricao', 'foto_ideal_index'.\n\n"
+                "STRICT RULES FOR THE 'descricao' FIELD:\n"
+                "- Create a professional, well-written, and complete advertisement description.\n"
+                "- Be clear, informative, and attractive in natural language.\n"
+                "- AVOID: emojis, HTML, prices, brand names, quotes, and special characters at the start/end.\n"
+                "- Focus on benefits and differentials with objective language.\n"
+                "- Start directly with the description text (no 'Description:' header).\n"
+                "- MINIMUM 3 paragraphs covering: physical characteristics, functional features, and recommended uses.\n"
+                "- Use an impersonal and professional 'e-commerce showcase' tone.\n"
+                "- Include a line-by-line summary of key technical specifications at the end.\n"
+                "- CRITICAL: No double line breaks. Use single line breaks only. No blank lines between paragraphs.\n"
+                "- Identify 'foto_ideal_index' as the best front-view photo number (1 to N)."
+            )
+            
+            response = self.client.models.generate_content(
+                model=self.model_extract,
+                contents=[prompt] + processed_images,
+                config=types.GenerateContentConfig(safety_settings=self.safety_settings)
+            )
+
+            usage = response.usage_metadata
+            try:
+                json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
+                res_json = json.loads(json_match.group(0)) if json_match else {}
+            except Exception:
+                res_json = {"raw_output": response.text}
+
+            return {
+                "gemini_response": json.dumps(res_json, ensure_ascii=False),
+                "infos_extraidas": res_json,
+                "usage": {
+                    "input": int(usage.prompt_token_count or 0), 
+                    "output": int(usage.candidates_token_count or 0)
                 }
-            else:
-                return {"error": "Extração de informações não solicitada.", "infos_extraidas": {}, "generated_images_urls": []}
+            }
         except Exception as e:
-            logger.error(f"💥 Erro no GeminiClient: {e}", exc_info=True)
-            return {"error": str(e), "infos_extraidas": {}, "generated_images_urls": []}
-        finally:
-            for img in pil_images:
-                try: img.close()
-                except: pass
+            logger.error(f"💥 Erro Step 1: {e}")
+            return {"error": str(e), "usage": {"input": 0, "output": 0}}
 
     def step2_generate_background_removed_image(self, image_path: str) -> Dict[str, Any]:
-        """
-        Step 2: Gera imagem com fundo removido usando a foto ideal.
-        """
-        from app.cloud import get_storage_client
-        import tempfile
-        from datetime import datetime
+            """Remoção de fundo com orientação vertical e visão frontal obrigatória"""
+            from app.cloud import get_storage_client
+            logger.info(f"🎨 Step 2: Editando imagem com {self.model_image}")
 
-        logger.info(f"🎨 Step 2: Iniciando remoção de fundo para imagem: {image_path}")
+            storage_client = get_storage_client()
+            try:
+                with PIL.Image.open(image_path).convert('RGB') as img:
+                    img = self._resize_image(img, max_size=1024) 
+                    
+                    # PROMPT FINAL E DEFINITIVO
+                    # Adicionamos "perfect front view" para forçar a IA a redesenhar de frente.
+                    prompt = (
+                        "Product background removal. "
+                        "Mandatory: Recreate the product in a perfect front view, standing vertically. "
+                        "Ensure all text and logos on the front of the packaging are clearly visible and readable. "
+                        "Output: Pure white background #FFFFFF. Image data only."
+                    )
+                    
+                    response = self.client.models.generate_content(
+                        model=self.model_image,
+                        contents=[prompt, img],
+                        config=types.GenerateContentConfig(safety_settings=self.safety_settings)
+                    )
+                    
+                    # ... (o resto da lógica de salvar a imagem e tratar erro permanece igual) ...
+                    usage = response.usage_metadata
+                    u_data = {
+                        "input": int(usage.prompt_token_count or 0), 
+                        "output": int(usage.candidates_token_count or 0)
+                    }
 
-        if not image_path or not os.path.exists(image_path):
-            logger.error(f"❌ Step 2: Caminho da imagem inválido: {image_path}")
-            return {"error": "Caminho da imagem inválido."}
+                    if not response.candidates or not response.candidates[0].content.parts:
+                        return {"error": "IA bloqueou a geração.", "usage": u_data}
 
-        storage_client = get_storage_client()
-        temp_files = []
+                    image_part = None
+                    for part in response.candidates[0].content.parts:
+                        if hasattr(part, 'inline_data') and part.inline_data:
+                            image_part = part
+                            break
 
-        try:
-            with PIL.Image.open(image_path) as img:
-                if img.mode in ('RGBA', 'P'): img = img.convert('RGB')
+                    if not image_part:
+                        text_part = response.candidates[0].content.parts[0]
+                        if hasattr(text_part, 'text') and text_part.text:
+                            return {"error": f"IA recusou: {text_part.text[:20]}", "usage": u_data}
+                        raise ValueError("A IA não retornou imagem binária.")
 
-                # Prompt para remoção de fundo
-                prompt = "Isolate the packaged product from this supermarket shelf image. Remove the shelf, background, price tags, and any other elements. Keep only the product package itself, centered on a clean white background. Make sure the product packaging is fully visible and intact."
-                logger.info(f"📝 Step 2: Enviando prompt para Gemini: {prompt}")
-                
-                # Usar o modelo configurado para geração de imagens
-                model = genai.GenerativeModel(self.model_name)
-                response = model.generate_content([prompt, img])
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
+                        tmp.write(image_part.inline_data.data)
+                        temp_path = tmp.name
 
-                if not response.candidates or not response.candidates[0].content.parts:
-                    raise ValueError("Nenhuma imagem gerada pela IA.")
+                    filename = f"sams_bg_removed_{datetime.now().strftime('%H%M%S')}.png"
+                    public_url = storage_client.upload_image(temp_path, filename)
+                    os.remove(temp_path)
 
-                # Extração do binário da imagem gerada
-                image_data = response.candidates[0].content.parts[0].inline_data.data
-                logger.info(f"📏 Tamanho dos dados da imagem gerada: {len(image_data)} bytes")
-                if len(image_data) == 0:
-                    raise ValueError("Dados da imagem estão vazios - Gemini não conseguiu gerar a imagem.")
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
-                    tmp.write(image_data)
-                    temp_image_path = tmp.name
-                    temp_files.append(temp_image_path)
+                    return {"public_urls": [public_url], "usage": u_data}
+            except Exception as e:
+                logger.error(f"❌ Erro Step 2: {e}")
+                return {"error": str(e), "usage": {"input": 0, "output": 0}}
 
-                # Upload para GCS
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"sams_club_bg_removed_{timestamp}.png"
-                public_url = storage_client.upload_image(temp_image_path, filename)
-                logger.info(f"✅ Step 2: Imagem sem fundo gerada e enviada: {public_url}")
-
-                return {"public_urls": [public_url]}
-
-        except Exception as e:
-            logger.error(f"❌ Step 2: Erro na geração de imagem sem fundo: {e}", exc_info=True)
-            return {"error": str(e), "public_urls": []}
-        finally:
-            for tmp in temp_files:
-                try: os.unlink(tmp)
-                except: pass
-
-# --- FUNÇÕES DE COMPATIBILIDADE PARA O ROUTES.PY ---
-
+# Funções de ponte fora da classe
 def send_to_gemini(image_paths: List[str], extract_infos: bool = True):
-    return GeminiClient().step1_extract_product_data(image_paths, extract_infos=extract_infos)
+    return GeminiClient().step1_extract_product_data(image_paths, extract_infos)
 
-# Placeholder para compatibilidade futura
-def generate_product_images_with_gemini(product_image_path: str, extract_infos: bool = False, **kwargs):
-    client = GeminiClient()
-    result = client.step1_extract_product_data([product_image_path], extract_infos=extract_infos)
-    return {"public_urls": result.get("generated_images_urls", [])}
+def generate_product_images_with_gemini(product_image_path: str, **kwargs):
+    return GeminiClient().step2_generate_background_removed_image(product_image_path)

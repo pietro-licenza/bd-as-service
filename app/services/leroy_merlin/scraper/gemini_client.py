@@ -6,7 +6,7 @@ by analyzing the product URL directly.
 """
 import logging
 import json
-import google.generativeai as genai
+from google import genai
 from typing import Dict, List
 
 from app.core.config import settings

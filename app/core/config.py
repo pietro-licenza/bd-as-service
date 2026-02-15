@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     
     # Gemini API
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "AIzaSyCtBzhyDgY-l8pTqTm2FURrZVsdjQyd5BA")
-    GEMINI_MODEL_TEXT: str = "gemini-2.5-flash-lite"
-    GEMINI_MODEL_MULTIMODAL: str = "gemini-2.5-flash-image"
+    GEMINI_MODEL_TEXT: str = "models/gemini-2.5-flash-lite"
+    GEMINI_MODEL_MULTIMODAL: str = "models/gemini-2.5-flash-image"
     GEMINI_ENDPOINT: str = "https://api.gemini.com/v1/process"
     
     # GCP Config

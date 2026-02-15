@@ -1,7 +1,7 @@
 """
 Pydantic schemas for request/response validation.
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 
 
@@ -59,48 +59,43 @@ class ProductPromptRequest(BaseModel):
     filenames: List[str] = Field(..., description="List of filenames")
 
 class BatchProductResponse(BaseModel):
-    """Response for a single product in batch processing."""
-    product_id: str = Field(..., description="Product identifier in the batch")
-    num_images: int = Field(..., description="Number of images for this product")
-    filenames: List[str] = Field(..., description="List of filenames")
-    prompt: str = Field(..., description="Prompt livre enviado para o produto")
-    gemini_response: str = Field(..., description="Raw response from Gemini API")
-    generated_images_urls: List[str] = Field(default_factory=list, description="URLs of generated product images in cloud")
-    error: Optional[str] = Field(None, description="Error message if processing failed")
+    product_id: str
+    num_images: int
+    filenames: List[str]
+    prompt: str
+    gemini_response: str
+    generated_images_urls: List[str] = Field(default_factory=list)
+    error: Optional[str] = None
     
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "product_id": "product1",
-                "num_images": 2,
-                "filenames": ["img1.jpg", "img2.jpg"],
-                "gemini_response": '{"nome_produto": "...", "preco": "...", "ean": "..."}',
-                "generated_images_urls": [
-                    "https://storage.googleapis.com/bucket/products/produto_1/image1.png",
-                    "https://storage.googleapis.com/bucket/products/produto_1/image2.png"
-                ]
-            }
-        }
+    # CAMPOS ESSENCIAIS PARA O CUSTO APARECER NO JS
+    input_tokens: int = 0
+    input_cost_brl: float = 0.0
+    output_tokens: int = 0
+    output_cost_brl: float = 0.0
+    total_cost_brl: float = 0.0
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BatchResponse(BaseModel):
-    """Response for batch processing."""
-    products: List[BatchProductResponse] = Field(..., description="Results for each product")
-    total_products: int = Field(..., description="Total number of products processed")
-    excel_download_url: Optional[str] = Field(None, description="URL to download Excel report")
+    products: List[BatchProductResponse]
+    total_products: int
+    excel_download_url: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class BatchProductResponse(BaseModel):
+    """Response for a single product in batch processing."""
+    product_id: str
+    num_images: int
+    filenames: List[str]
+    prompt: str
+    gemini_response: str
+    generated_images_urls: List[str] = Field(default_factory=list)
+    error: Optional[str] = None
     
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "total_products": 2,
-                "products": [
-                    {
-                        "product_id": "product1",
-                        "num_images": 3,
-                        "filenames": ["img1.jpg", "img2.jpg", "img3.jpg"],
-                        "gemini_response": "{...}"
-                    }
-                ],
-                "excel_download_url": "/exports/produtos_20260205_143022.xlsx"
-            }
-        }
+    # NOVAS COLUNAS PARA O FRONTEND
+    input_tokens: Optional[int] = 0
+    input_cost_brl: Optional[float] = 0.0
+    output_tokens: Optional[int] = 0
+    output_cost_brl: Optional[float] = 0.0
+    total_cost_brl: Optional[float] = 0.0

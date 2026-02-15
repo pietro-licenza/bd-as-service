@@ -1,15 +1,39 @@
 // --- Globals & Utils ---
-// Função para estimar custo Gemini
-const PROMPT_TEXT = "You will receive 3 to 5 photos of a supermarket product. 1. Analyze the label photo(s) and extract: product name, price, and barcode. 2. Analyze the specification photo(s) and generate a professional marketplace description. 3. Among all photos, select the 'ideal product photo', meaning the clearest and sharpest front view. Return a JSON with the fields: 'nome', 'preco', 'codigo_barras', 'descricao', 'foto_ideal_index' (index of the ideal photo, starting at 1). If any field is not found, return empty for it.";
-const PROMPT_LENGTH = PROMPT_TEXT.length; // Calculado dinamicamente
-function estimateGeminiCost(promptLength, numImages, removeBackground) {
-    const tokensPrompt = promptLength;
-    const tokensImages = numImages * 1000;
-    const tokensGeneration = removeBackground ? 2000 : 0; // Estimativa para remoção de fundo
+
+/**
+ * Peso estimado em tokens do Prompt que reside no Backend (gemini_client.py).
+ * Isso evita a duplicidade de texto e mantém a estimativa de custo precisa.
+ */
+const SYSTEM_PROMPT_WEIGHT = 350; 
+
+// Função para formatar valores em Reais (BRL)
+const formatBRL = (val) => {
+    return (val || 0).toLocaleString('pt-BR', { 
+        style: 'currency', 
+        currency: 'BRL', 
+        minimumFractionDigits: 4 
+    });
+};
+
+/**
+ * Estimativa visual antes do processamento (Pre-processamento)
+ * @param {number} numImages - Quantidade de fotos selecionadas
+ * @param {boolean} removeBackground - Se a flag de remoção de fundo está ativa
+ */
+function estimateGeminiCost(numImages, removeBackground) {
+    const tokensPrompt = SYSTEM_PROMPT_WEIGHT;
+    // Média de tokens para imagem redimensionada a 800px no Gemini 1.5/2.x
+    const tokensImages = numImages * 258; 
+    // Estimativa de tokens de saída para o JSON e possível remoção de fundo
+    const tokensGeneration = removeBackground ? 1200 : 400; 
+    
     const totalTokens = tokensPrompt + tokensImages + tokensGeneration;
-    const usd = (totalTokens / 1000000) * 0.50;
-    const brl = usd * 5.0; // Cotação fixa
-    return { tokens: totalTokens, usd: usd, brl: brl };
+    
+    // Estimativa baseada nos preços do Gemini 2.5 Flash Lite
+    const usd = (totalTokens / 1000000) * 0.075;
+    const brl = usd * 5.10; // Cotação estimada
+    
+    return { tokens: totalTokens, brl: brl };
 }
 
 // Sam's Club Page Template
@@ -21,7 +45,7 @@ const SamsClubTemplate = () => `
 
     <div class="upload-section">
         <h2>Processar Produtos</h2>
-        <p>Adicione produtos e suas respectivas imagens. Nosso sistema de IA irá extrair automaticamente todas as informações relevantes.</p>
+        <p>Adicione produtos e suas respectivas imagens. O sistema usará o prompt oficial do servidor para análise.</p>
         
         <div id="productsContainer"></div>
         
@@ -42,6 +66,7 @@ const SamsClubTemplate = () => `
     </div>
 
     <div class="results-section">
+        <div id="batchSummary" style="margin-bottom: 1.5rem;"></div>
         <h2>📊 Resultados</h2>
         <div id="results">
             <div class="empty-state">
@@ -59,21 +84,15 @@ function initSamsClubPage() {
     const clearBtn = document.getElementById('clearBtn');
     const productsContainer = document.getElementById('productsContainer');
     const resultsDiv = document.getElementById('results');
+    const batchSummary = document.getElementById('batchSummary');
 
-    // Reset state
-    if (typeof AppState !== 'undefined') {
-        AppState.reset();
-    }
+    if (typeof AppState !== 'undefined') { AppState.reset(); }
 
-    // Event Listeners
     addProductBtn.addEventListener('click', () => addProduct());
     processBatchBtn.addEventListener('click', () => processBatch());
     clearBtn.addEventListener('click', () => clearResults());
 
-    // Initialize with one product
     addProduct();
-
-    // --- Helper Functions Inside Init ---
 
     function addProduct() {
         const productId = AppState.productIdCounter++;
@@ -102,19 +121,17 @@ function initSamsClubPage() {
                 </label>
                 <input type="file" id="fileInput-${productId}" multiple accept="image/*">
             </div>
-            <div class="flag-checkbox-wrapper" style="margin-top: 1rem;">
+            <div class="flag-checkbox-wrapper" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
                 <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                     <input type="checkbox" id="extractInfosFlag-${productId}" checked style="accent-color: var(--primary-color); width: 1.1rem; height: 1.1rem;">
                     <span style="color: var(--text-primary);">Extrair informações do produto</span>
                 </label>
-            </div>
-            <div class="flag-checkbox-wrapper" style="margin-top: 1rem;">
                 <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                     <input type="checkbox" id="removeBackground-${productId}" style="accent-color: var(--primary-color); width: 1.1rem; height: 1.1rem;">
                     <span style="color: var(--text-primary);">Remover Fundo da Imagem</span>
                 </label>
             </div>
-            <div class="cost-estimate" id="costEstimate-${productId}" style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.95rem;"></div>
+            <div class="cost-estimate" id="costEstimate-${productId}" style="margin-top: 0.8rem; padding: 0.5rem; background: rgba(255,255,255,0.03); border-radius: 4px; color: var(--text-secondary); font-size: 0.85rem; border-left: 3px solid var(--primary-color);"></div>
             <div class="selected-files" id="files-${productId}">
                 <p style="color: var(--text-light); margin: 0;">Nenhuma imagem selecionada</p>
             </div>
@@ -128,25 +145,18 @@ function initSamsClubPage() {
         const extractInfosFlag = document.getElementById(`extractInfosFlag-${productId}`);
         const removeBackgroundFlag = document.getElementById(`removeBackground-${productId}`);
         
-        // Eventos do Produto
-        fileInput.addEventListener('change', (e) => {
-            handleFileSelect(productId, e.target.files);
-        });
-
+        fileInput.addEventListener('change', (e) => handleFileSelect(productId, e.target.files));
         extractInfosFlag.addEventListener('change', (e) => {
-            const product = AppState.batchProducts.find(p => p.id === productId);
-            if (product) product.extractInfos = e.target.checked;
+            const p = AppState.batchProducts.find(x => x.id === productId);
+            if (p) p.extractInfos = e.target.checked;
             updateCost(productId);
         });
-
         removeBackgroundFlag.addEventListener('change', (e) => {
-            const product = AppState.batchProducts.find(p => p.id === productId);
-            if (product) product.removeBackground = e.target.checked;
+            const p = AppState.batchProducts.find(x => x.id === productId);
+            if (p) p.removeBackground = e.target.checked;
             updateCost(productId);
         });
-
         removeBtn.addEventListener('click', () => removeProduct(productId));
-        updateCost(productId);
         updateCost(productId);
         updateUI();
     }
@@ -156,28 +166,25 @@ function initSamsClubPage() {
         const costDiv = document.getElementById(`costEstimate-${productId}`);
         if (!product || !costDiv) return;
 
-        const promptLength = product.extractInfos ? PROMPT_LENGTH : 0;
-        const estimate = estimateGeminiCost(promptLength, product.files.length, product.removeBackground);
-        costDiv.innerHTML = `Estimativa: <b>${estimate.tokens}</b> tokens ≈ <b>US$ ${estimate.usd.toFixed(4)}</b> / <b>R$ ${estimate.brl.toFixed(2)}</b>`;
+        // Se extractInfos estiver off, o prompt do sistema não é processado
+        const currentPromptWeight = product.extractInfos ? SYSTEM_PROMPT_WEIGHT : 0;
+        const estimate = estimateGeminiCost(product.files.length, product.removeBackground);
+        
+        costDiv.innerHTML = `<span>💡 Estimativa: <b>${estimate.tokens}</b> tokens ≈ <b style="color:var(--primary-color)">${formatBRL(estimate.brl)}</b></span>`;
     }
 
     function removeProduct(productId) {
         const productDiv = document.getElementById(`product-${productId}`);
         if (productDiv) {
-            productDiv.style.opacity = '0';
-            productDiv.style.transform = 'scale(0.95)';
-            setTimeout(() => {
-                productDiv.remove();
-                AppState.batchProducts = AppState.batchProducts.filter(p => p.id !== productId);
-                updateUI();
-            }, 200);
+            productDiv.remove();
+            AppState.batchProducts = AppState.batchProducts.filter(p => p.id !== productId);
+            updateUI();
         }
     }
 
     function handleFileSelect(productId, files) {
         const product = AppState.batchProducts.find(p => p.id === productId);
         if (!product) return;
-        
         product.files = Array.from(files);
         updateFileList(productId);
         updateCost(productId);
@@ -194,11 +201,9 @@ function initSamsClubPage() {
             filesDiv.innerHTML = '<p style="color: var(--text-light); margin: 0;">Nenhuma imagem selecionada</p>';
             countSpan.innerHTML = '<span>📸</span><span>0 imagens</span>';
         } else {
-            const fileList = product.files.map(file => 
-                `<li>${file.name} <span style="color: var(--text-secondary);">(${(file.size / 1024).toFixed(1)} KB)</span></li>`
-            ).join('');
+            const fileList = product.files.map(file => `<li>${file.name}</li>`).join('');
             filesDiv.innerHTML = `<ul class="file-list">${fileList}</ul>`;
-            countSpan.innerHTML = `<span>📸</span><span>${product.files.length} imagem(ns)</span>`;
+            countSpan.innerHTML = `<span>📸</span><span>${product.files.length} imagens</span>`;
         }
     }
 
@@ -211,130 +216,110 @@ function initSamsClubPage() {
         const productsWithFiles = AppState.batchProducts.filter(p => p.files.length > 0);
         if (productsWithFiles.length === 0) return;
 
-        const hasResults = !resultsDiv.querySelector('.empty-state') && resultsDiv.children.length > 0;
-        if (hasResults) {
-            let confirmed = window.confirm('Já existem resultados na tela. Deseja iniciar uma nova execução e apagar os resultados anteriores?');
-            if (!confirmed) return;
-            resultsDiv.innerHTML = '';
-            AppState.resultCounter = 1;
-        }
-
+        resultsDiv.innerHTML = '<div class="loading">🚀 Processando Lote... Isso pode levar alguns segundos.</div>';
         processBatchBtn.disabled = true;
-        processBatchBtn.innerHTML = '<span>⏳</span><span>Processando...</span>';
 
         const formData = new FormData();
         productsWithFiles.forEach((product, index) => {
-            formData.append(`extract_infos_${index + 1}`, product.extractInfos ? 'true' : 'false');
-            formData.append(`remove_background_${index + 1}`, product.removeBackground ? 'true' : 'false');
-            product.files.forEach((file, fileIndex) => {
-                const newFile = new File(
-                    [file], 
-                    `product${index + 1}_img${fileIndex + 1}.${file.name.split('.').pop()}`, 
-                    { type: file.type }
-                );
-                formData.append('files', newFile);
+            formData.append(`extract_infos_${index + 1}`, product.extractInfos);
+            formData.append(`remove_background_${index + 1}`, product.removeBackground);
+            product.files.forEach((file, fIdx) => {
+                formData.append('files', new File([file], `product${index + 1}_img${fIdx + 1}.${file.name.split('.').pop()}`, { type: file.type }));
             });
         });
 
         try {
-            showLoading();
-            const response = await fetch('/api/sams-club/process-batch/', {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
+            const response = await fetch('/api/sams-club/process-batch/', { method: 'POST', body: formData });
+            if (!response.ok) throw new Error(`Erro: ${response.status}`);
             const data = await response.json();
             displayResults(data);
 
-            // Reset após sucesso
-            AppState.batchProducts = [];
+            // Limpa formulário após sucesso para nova rodada
             productsContainer.innerHTML = '';
+            AppState.batchProducts = [];
             AppState.productIdCounter = 1;
             addProduct();
             updateUI();
 
         } catch (error) {
-            console.error('Processing error:', error);
             displayError(error.message);
         } finally {
             processBatchBtn.disabled = false;
-            processBatchBtn.innerHTML = '<span>🚀</span><span>Processar Todos</span>';
         }
+    }
+
+    function displayResults(data) {
+        resultsDiv.innerHTML = '';
+        const products = data.products || [];
+        
+        // Calcular total real do lote (vindo do Backend)
+        const batchTotalBRL = products.reduce((sum, p) => sum + (p.total_cost_brl || 0), 0);
+        batchSummary.innerHTML = `
+            <div style="background: var(--primary-color); color: white; padding: 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <span>🎯 Lote concluído: <b>${products.length} produtos</b></span>
+                <span>💰 Investimento real: <b>${formatBRL(batchTotalBRL)}</b></span>
+            </div>
+        `;
+
+        products.forEach(product => {
+            const isError = product.error;
+            let imagesHTML = '';
+            if (product.generated_images_urls?.length > 0) {
+                imagesHTML = `<div style="display:flex; gap:10px; margin-top:10px;">` + 
+                    product.generated_images_urls.map(url => `<img src="${url}" style="width:120px; border-radius:4px; border:1px solid #444; cursor:pointer;" onclick="window.open('${url}')">`).join('') + 
+                    `</div>`;
+            }
+
+            const resultHTML = `
+                <div class="product-result ${isError ? 'error' : ''}">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                        <h3 style="margin:0;">${isError ? '❌' : '✅'} Produto: ${product.product_id}</h3>
+                        <div style="text-align:right;">
+                             <span class="badge bg-success" style="font-size:0.9rem;">Custo: ${formatBRL(product.total_cost_brl)}</span>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1rem; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px;">
+                        <div style="border-right: 1px solid #444; padding-right: 10px;">
+                            <small style="color: #aaa; display:block; margin-bottom:4px;">📥 ENVIO (Prompt+Fotos)</small>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>${product.input_tokens} tokens</span>
+                                <b style="color: #ddd;">${formatBRL(product.input_cost_brl)}</b>
+                            </div>
+                        </div>
+                        <div style="padding-left: 5px;">
+                            <small style="color: #aaa; display:block; margin-bottom:4px;">📤 RESPOSTA (Análise+JSON)</small>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span>${product.output_tokens} tokens</span>
+                                <b style="color: #ddd;">${formatBRL(product.output_cost_brl)}</b>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="product-data">
+                        ${isError ? 
+                            `<p style="color: var(--danger-color)">${product.error}</p>` :
+                            `<pre style="background:#111; padding:15px; border-radius:6px; color:#88f; font-size:0.85rem; overflow-x:auto;">${JSON.stringify(JSON.parse(product.gemini_response || '{}'), null, 2)}</pre>
+                             ${imagesHTML}`
+                        }
+                    </div>
+                </div>`;
+            resultsDiv.insertAdjacentHTML('beforeend', resultHTML);
+        });
     }
 
     function clearResults() {
         resultsDiv.innerHTML = `
             <div class="empty-state">
                 <div class="empty-state-icon">📭</div>
-                <p>Nenhum resultado ainda. Adicione produtos e imagens para processar.</p>
+                <p>Resultados limpos. Adicione novos produtos.</p>
             </div>
         `;
+        batchSummary.innerHTML = '';
         AppState.resultCounter = 1;
     }
 
-    function showLoading() {
-        // Show loading state
-        resultsDiv.innerHTML = '<div class="loading" style="color: var(--text-primary);">Processando...</div>';
-    }
-
-    function displayResults(data) {
-        // Clear loading
-        const loading = resultsDiv.querySelector('.loading');
-        if (loading) loading.remove();
-
-        let products;
-        if (Array.isArray(data)) {
-            products = data;
-        } else if (data && data.products) {
-            products = data.products;
-        } else {
-            console.error('Invalid data format:', data);
-            return;
-        }
-
-        products.forEach(product => {
-            const isError = product.error;
-            let generatedImagesHTML = '';
-            if (product.generated_images_urls?.length > 0) {
-                const imageCards = product.generated_images_urls.map((url, idx) => `
-                    <div style="flex: 1; min-width: 150px; max-width: 200px;">
-                        <img src="${url}" style="width: 100%; border-radius: 8px;" onclick="window.open('${url}', '_blank')">
-                    </div>`).join('');
-                generatedImagesHTML = `<div style="margin-top: 1rem;">${imageCards}</div>`;
-            }
-            
-            const resultHTML = `
-                <div class="product-result ${isError ? 'error' : ''}">
-                    <h3>${isError ? '❌' : '✅'} Produto #${AppState.resultCounter++}</h3>
-                    <div class="product-data">
-                        ${isError ? 
-                            `<p style="color: var(--danger-color); font-weight: 500; margin: 0;"><strong>⚠️ Erro:</strong> ${product.error}</p>` :
-                            `
-                            <div style="background: rgba(255, 255, 255, 0.05); padding: 1.25rem; border-radius: 8px;">
-                                <h4 style="color: var(--text-primary); margin-bottom: 0.75rem; font-size: 1.125rem;">📊 Dados Extraídos</h4>
-                                <pre style="color: var(--text-secondary); background: rgba(0, 0, 0, 0.2); padding: 1rem; border-radius: 6px; border: 1px solid var(--border-color); font-family: 'Courier New', monospace; font-size: 0.875rem; line-height: 1.4; margin: 0; white-space: pre-wrap; word-wrap: break-word;">${JSON.stringify(JSON.parse(product.gemini_response || '{}'), null, 2)}</pre>
-                                ${generatedImagesHTML}
-                            </div>
-                            `
-                        }
-                    </div>
-                </div>`;
-            resultsDiv.insertAdjacentHTML('afterbegin', resultHTML);
-        });
-    }
-
-    function displayError(message) {
-        // Clear loading
-        const loading = resultsDiv.querySelector('.loading');
-        if (loading) loading.remove();
-
-        resultsDiv.insertAdjacentHTML('afterbegin', `<div class="product-result error">
-                <h3>❌ Erro no Processamento</h3>
-                <div class="product-data">
-                    <p style="color: var(--danger-color); font-weight: 500; margin: 0;"><strong>⚠️ Erro:</strong> ${message}</p>
-                </div>
-            </div>`);
+    function displayError(msg) {
+        resultsDiv.innerHTML = `<div class="product-result error"><h3>❌ Erro Crítico</h3><p>${msg}</p></div>`;
     }
 }

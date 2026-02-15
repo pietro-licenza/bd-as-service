@@ -5,7 +5,7 @@ import PIL.Image
 from typing import List, Tuple, Dict, Any
 from pathlib import Path
 from datetime import datetime
-import google.generativeai as genai
+from google import genai
 
 logger = logging.getLogger(__name__)
 
