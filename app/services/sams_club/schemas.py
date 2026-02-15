@@ -51,11 +51,19 @@ class OCRResult(BaseModel):
     barcodes: List[dict]
 
 
+class ProductPromptRequest(BaseModel):
+    """Request for a single product with images and prompt."""
+    product_id: str = Field(..., description="Product identifier in the batch")
+    prompt: str = Field(..., description="Prompt livre para o produto")
+    # Aqui pode ser uma lista de nomes de arquivos, ou base64, ou URLs temporários
+    filenames: List[str] = Field(..., description="List of filenames")
+
 class BatchProductResponse(BaseModel):
     """Response for a single product in batch processing."""
     product_id: str = Field(..., description="Product identifier in the batch")
     num_images: int = Field(..., description="Number of images for this product")
     filenames: List[str] = Field(..., description="List of filenames")
+    prompt: str = Field(..., description="Prompt livre enviado para o produto")
     gemini_response: str = Field(..., description="Raw response from Gemini API")
     generated_images_urls: List[str] = Field(default_factory=list, description="URLs of generated product images in cloud")
     error: Optional[str] = Field(None, description="Error message if processing failed")

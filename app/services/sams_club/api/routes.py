@@ -13,7 +13,7 @@ from fastapi import APIRouter, UploadFile, File
 import re
 
 from app.services.sams_club.schemas import BatchResponse, BatchProductResponse
-from app.shared.gemini_client import send_to_gemini, generate_product_images_with_gemini, get_gemini_client
+from app.services.sams_club.image_parser.gemini_client import send_to_gemini, generate_product_images_with_gemini
 from app.core.config import settings
 from app.shared.excel_generator import generate_standard_excel
 
@@ -30,8 +30,10 @@ router = APIRouter(
 settings.EXPORTS_DIR.mkdir(exist_ok=True)
 
 
+from fastapi import Request
+
 @router.post("/process-batch/", response_model=BatchResponse)
-async def process_batch(files: List[UploadFile] = File(...)) -> BatchResponse:
+async def process_batch(request: Request, files: List[UploadFile] = File(...)) -> BatchResponse:
     """
     Process multiple products in batch.
     
@@ -78,128 +80,87 @@ async def process_batch(files: List[UploadFile] = File(...)) -> BatchResponse:
     # Process each product
     all_products = []
     excel_data = []
-    
-    for product_id, product_files in product_groups.items():
-        temp_dir = None
-        temp_paths = []
-        
-        try:
-            # Create temporary directory
-            temp_dir = tempfile.mkdtemp()
-            
-            # Save uploaded files temporarily
-            for file in product_files:
-                content = await file.read()
-                temp_path = Path(temp_dir) / file.filename
-                with open(temp_path, "wb") as f:
-                    f.write(content)
-                temp_paths.append(str(temp_path))
-            
-            # Send images to Gemini for data extraction
-            result = send_to_gemini(temp_paths)
-            
-            # Parse gemini_response (it's a JSON string)
-            gemini_response_text = result.get("gemini_response", "")
-            product_image_path = result.get("product_image_path")
-            
-            gemini_data = {}
-            if isinstance(gemini_response_text, str):
-                try:
-                    # Clean JSON formatting (remove markdown code blocks)
-                    clean_json = gemini_response_text.replace("```json", "").replace("```", "").strip()
-                    gemini_data = json.loads(clean_json)
-                except json.JSONDecodeError as e:
-                    gemini_data = {"error": "Resposta inválida da IA"}
-            
-            # Generate description locally and use it as the canonical description (override any existing)
-            if isinstance(gemini_data, dict):
-                try:
-                    gc = get_gemini_client()
-                    product_title = gemini_data.get("nome_produto", "")
-                    especificacoes = gemini_data.get("especificacoes", [])
-                except Exception as desc_err:
-                    log_streamer.log(f"⚠️  Falha ao gerar descrição localmente: {desc_err}", "WARNING")
 
-            # Generate product images with AI and upload to cloud
-            generated_images_urls = []
-            
-            if product_image_path and isinstance(gemini_data, dict) and "error" not in gemini_data:
-                try:
-                    product_name = gemini_data.get("nome_produto", "produto")
-                    
-                    # Extract numeric ID from product_id (e.g., "product_1" -> 1)
-                    numeric_id = None
-                    id_match = re.search(r'\\d+', product_id)
-                    if id_match:
-                        numeric_id = int(id_match.group())
-                    
-                    image_gen_result = generate_product_images_with_gemini(
-                        product_image_path=product_image_path,
-                        product_name=product_name,
-                        product_id=numeric_id
-                    )
-                    generated_images_urls = image_gen_result.get("public_urls", [])
-                except Exception as img_error:
-                    pass
+    # Recebe flags e prompts do frontend (FormData)
+    form = await request.form()
+    prompts = {}
+    extract_infos_flags = {}
+    remove_background_flags = {}
+    for k, v in form.items():
+        if k.startswith('prompt_product_'):
+            idx = k.split('_')[-1]
+            prompts[f'product{idx}'] = v
+        if k.startswith('extract_infos_'):
+            idx = k.split('_')[-1]
+            extract_infos_flags[f'product{idx}'] = v == 'true'
+        if k.startswith('remove_background_'):
+            idx = k.split('_')[-1]
+            remove_background_flags[f'product{idx}'] = v == 'true'
+
+    logger.info(f"📋 Flags recebidas - Extract Infos: {extract_infos_flags}, Remove Background: {remove_background_flags}")
+
+    for i, (product_id, product_files) in enumerate(product_groups.items(), 1):
+        temp_dir = tempfile.mkdtemp()
+        temp_paths = []
+        for file in product_files:
+            content = await file.read()
+            temp_path = Path(temp_dir) / file.filename
+            with open(temp_path, "wb") as f:
+                f.write(content)
+            # Converte MPO para JPEG se necessário
+            from app.shared.gemini_client import convert_mpo_to_jpeg
+            converted_path, _ = convert_mpo_to_jpeg(str(temp_path))
+            temp_paths.append(converted_path)
+
+        # Prompt e flag para o produto
+        prompt = prompts.get(f'product{i}', "Descreva o produto.")
+        extract_infos = extract_infos_flags.get(f'product{i}', True)
+
+        # Chama GeminiClient com a flag correta
+        from app.services.sams_club.image_parser.gemini_client import GeminiClient
+        gemini_client = GeminiClient()
+        result = gemini_client.step1_extract_product_data(temp_paths, extract_infos=extract_infos)
+        gemini_response_text = result.get("gemini_response", "")
+        generated_images_urls = result.get("generated_images_urls", [])
+
+        # Processa remoção de fundo se solicitado
+        remove_background = remove_background_flags.get(f'product{i}', False)
+        if remove_background and extract_infos:
+            logger.info(f"🎨 Iniciando Step 2: Remoção de fundo para produto {product_id}")
+            infos = result.get("infos_extraidas", {})
+            ideal_index = infos.get("foto_ideal_index", 1) - 1  # 0-based
+            logger.info(f"🎯 Produto {product_id}: foto_ideal_index={infos.get('foto_ideal_index', 'N/A')}, ideal_index ajustado={ideal_index}, total imagens={len(temp_paths)}")
+            if 0 <= ideal_index < len(temp_paths):
+                ideal_path = temp_paths[ideal_index]
+                logger.info(f"🖼️ Imagem selecionada para Step 2: {ideal_path}")
+                gen_result = gemini_client.step2_generate_background_removed_image(ideal_path)
+                generated_images_urls = gen_result.get("public_urls", [])
+                logger.info(f"✅ Step 2 concluído para produto {product_id}: {len(generated_images_urls)} imagens geradas")
             else:
-                if not product_image_path:
-                    pass
-                if "error" in gemini_data:
-                    pass
-            
-            # Create product response
-            product_response = BatchProductResponse(
-                product_id=product_id,
-                num_images=len(product_files),
-                filenames=[file.filename for file in product_files],
-                gemini_response=json.dumps(gemini_data, ensure_ascii=False) if isinstance(gemini_data, dict) else str(gemini_data),
-                generated_images_urls=generated_images_urls,
-                error=gemini_data.get("error") if isinstance(gemini_data, dict) else None
-            )
-            
-            all_products.append(product_response)
-            
-            # Prepare data for Excel
-            if isinstance(gemini_data, dict) and "error" not in gemini_data:
-                excel_data.append({
-                    "product_id": product_id,
-                    "nome_produto": gemini_data.get("nome_produto", ""),
-                    "preco": gemini_data.get("preco", ""),
-                    "ean": gemini_data.get("ean", ""),
-                    "especificacoes": gemini_data.get("especificacoes", []),
-                    "descricao": gemini_data.get("descricao", ""),
-                    "generated_images_urls": generated_images_urls,
-                    "num_generated": len(generated_images_urls)
-                })
-            
-            logger.info(f"✅ {product_id} processado com sucesso!")
-            
-        except Exception as e:
-            logger.error(f"❌ Erro ao processar {product_id}: {str(e)}")
-            product_response = BatchProductResponse(
-                product_id=product_id,
-                num_images=len(product_files),
-                filenames=[file.filename for file in product_files],
-                gemini_response="",
-                generated_images_urls=[],
-                error=str(e)
-            )
-            all_products.append(product_response)
-        
-        finally:
-            # Clean up temporary files with proper file handle closure
-            if temp_dir and os.path.exists(temp_dir):
-                try:
-                    # Small delay to ensure file handles are released (Windows issue)
-                    import time
-                    time.sleep(0.1)
-                    shutil.rmtree(temp_dir)
-                    logger.debug(f"🧹 Arquivos temporários removidos: {temp_dir}")
-                except PermissionError as e:
-                    # On Windows, files might still be in use
-                    logger.warning(f"⚠️  Arquivos temporários serão removidos posteriormente: {temp_dir}")
-                except Exception as e:
-                    logger.warning(f"⚠️  Erro ao remover arquivos temporários: {str(e)}")
+                logger.warning(f"⚠️ Índice ideal inválido para produto {product_id}: {ideal_index}")
+        else:
+            logger.info(f"⏭️ Step 2 pulado para produto {product_id} (remove_background: {remove_background}, extract_infos: {extract_infos})")
+
+        product_response = BatchProductResponse(
+            product_id=product_id,
+            num_images=len(product_files),
+            filenames=[file.filename for file in product_files],
+            prompt=prompt,
+            gemini_response=gemini_response_text,
+            generated_images_urls=generated_images_urls,
+            error=None
+        )
+        all_products.append(product_response)
+
+        # Limpeza dos arquivos temporários
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                import time
+                time.sleep(0.1)
+                shutil.rmtree(temp_dir)
+                logger.debug(f"🧹 Arquivos temporários removidos: {temp_dir}")
+            except PermissionError as e:
+                logger.warning(f"⚠️  Arquivos temporários serão removidos posteriormente: {temp_dir}")
     
     # Generate Excel report
     excel_url = None

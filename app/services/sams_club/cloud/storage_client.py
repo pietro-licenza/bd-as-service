@@ -27,9 +27,19 @@ class StorageClient:
                 settings.GCP_SERVICE_ACCOUNT_SECRET_NAME
             )
         else:
-            credentials_path = settings.BASE_DIR / settings.GCP_SERVICE_ACCOUNT_KEY_PATH
-            with open(credentials_path, 'r') as f:
-                credentials_json = json.load(f)
+            # Prefer GCP_SERVICE_ACCOUNT_JSON from .env if available
+            credentials_json_str = os.getenv("GCP_SERVICE_ACCOUNT_JSON") or getattr(settings, "GCP_SERVICE_ACCOUNT_JSON", None)
+            if credentials_json_str:
+                credentials_json = json.loads(credentials_json_str)
+            else:
+                key_path_or_json = settings.GCP_SERVICE_ACCOUNT_KEY_PATH
+                # If looks like a JSON string, try to parse; otherwise, treat as file path
+                if key_path_or_json.strip().startswith('{'):
+                    credentials_json = json.loads(key_path_or_json)
+                else:
+                    credentials_path = settings.BASE_DIR / key_path_or_json
+                    with open(credentials_path, 'r') as f:
+                        credentials_json = json.load(f)
         
         # Initialize storage client
         self.storage_client = storage.Client.from_service_account_info(credentials_json)
