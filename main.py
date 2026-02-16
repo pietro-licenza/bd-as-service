@@ -5,6 +5,7 @@ Professional microservices architecture for integration platform
 Run with: uvicorn main:app --reload
 """
 import logging
+import os
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +28,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# --- AJUSTE PARA PRODUÇÃO: CRIAÇÃO DE DIRETÓRIOS ---
+# Garante que as pastas existam antes do app tentar montá-las
+for directory in [settings.STATIC_DIR, settings.EXPORTS_DIR]:
+    if not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
+        logger.info(f"📁 Pasta criada: {directory}")
+
 # Initialize FastAPI application
 app = FastAPI(
     title=settings.APP_NAME,
@@ -45,7 +53,6 @@ app.add_middleware(
     allow_headers=settings.CORS_ALLOW_HEADERS,
 )
 
-
 # Include routers
 app.include_router(auth_router, prefix="/api", tags=["Auth"])
 app.include_router(main_router, tags=["API"])
@@ -55,17 +62,20 @@ app.include_router(sodimac_router, tags=["Sodimac"])
 app.include_router(web_router, tags=["Web"])
 
 # Mount static files (CSS, JS, images)
-app.mount("/static", StaticFiles(directory=settings.STATIC_DIR), name="static")
+# Usamos str() para garantir compatibilidade do Path com o Starlette
+app.mount("/static", StaticFiles(directory=str(settings.STATIC_DIR)), name="static")
 
 # Mount exports directory (Excel downloads)
-app.mount("/exports", StaticFiles(directory=settings.EXPORTS_DIR), name="exports")
+app.mount("/exports", StaticFiles(directory=str(settings.EXPORTS_DIR)), name="exports")
 
 if __name__ == "__main__":
     import uvicorn
+    # Em produção, o Cloud Run usa a variável de ambiente PORT
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
-        reload=True,
+        port=port,
+        reload=False, # Desativar reload em produção por performance
         log_level="info"
     )
