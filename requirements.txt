@@ -21,3 +21,8 @@ pyyaml
 requests
 beautifulsoup4
 pydantic-settings
+
+# Database
+sqlalchemy==2.0.27
+psycopg2-binary==2.9.9
+passlib[bcrypt]==1.7.4
