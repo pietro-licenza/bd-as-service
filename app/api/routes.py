@@ -5,16 +5,19 @@ import os
 import json
 import tempfile
 import logging
+import re
 from typing import List
 from datetime import datetime
-from fastapi import UploadFile, File, Depends
+from fastapi import UploadFile, File, Depends, APIRouter
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
-
+from sqlalchemy.orm import Session # Adicionado para Supabase
 
 from app.models.schemas import BatchResponse, BatchProductResponse
+from app.models.entities import ScrapingLog # Adicionado para Supabase
 from app.shared.gemini_client import send_to_gemini, generate_product_images_with_gemini
 from app.core.auth import get_current_user
+from app.core.database import get_db # Adicionado para Supabase
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -22,6 +25,9 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+
+# Initialize router
+router = APIRouter()
 
 # Ensure exports directory exists
 os.makedirs("exports", exist_ok=True)
@@ -43,7 +49,7 @@ def generate_excel_report(products_data: List[dict], filename: str) -> str:
     ws.title = "Produtos Processados"
     
     # Define headers
-    headers = ["ID", "Nome do Produto", "Pre\u00e7o", "EAN", "Especifica\u00e7\u00f5es", "Descri\u00e7\u00e3o", "Imagens Geradas", "Qtd Imagens"]
+    headers = ["ID", "Nome do Produto", "Preço", "EAN", "Especificações", "Descrição", "Imagens Geradas", "Qtd Imagens"]
     
     # Style headers
     header_fill = PatternFill(start_color="667eea", end_color="667eea", fill_type="solid")
@@ -93,39 +99,30 @@ def generate_excel_report(products_data: List[dict], filename: str) -> str:
     # Save file
     filepath = os.path.join("exports", filename)
     wb.save(filepath)
-    logger.info(f"\u2705 Excel gerado: {filepath}")
+    logger.info(f"✅ Excel gerado: {filepath}")
     
     return filepath
 
 
-async def process_batch_endpoint(files: List[UploadFile] = File(...), user: dict = Depends(get_current_user)) -> BatchResponse:
+@router.post("/process-batch")
+async def process_batch_endpoint(
+    files: List[UploadFile] = File(...), 
+    user = Depends(get_current_user),
+    db: Session = Depends(get_db) # Injeção da conexão Supabase
+) -> BatchResponse:
     """
-    Process multiple products in batch.
-    
-    Files should be named with product identifier (e.g., product1_img1.jpg, product1_img2.jpg, product2_img1.jpg)
-    OR they will be grouped sequentially based on upload order.
-    
-    For better control, name your files: product1_001.jpg, product1_002.jpg, product2_001.jpg, etc.
-    
-    Args:
-        files: List of all uploaded images
-        
-    Returns:
-        Batch response with results for all products
+    Process multiple products in batch and log usage to Supabase.
     """
-    logger.info(f"🚀 Iniciando processamento em lote de {len(files)} imagens")
+    logger.info(f"🚀 Iniciando processamento em lote de {len(files)} imagens para o usuário {user.username}")
     
     # Group files by product based on filename pattern
     product_groups = {}
     unmatched_files = []
     
     for file in files:
-        # Try to extract product ID from filename (e.g., "product1_img1.jpg" -> "product1")
         filename = file.filename
         product_id = None
         
-        # Pattern: productX_... or product_X_...
-        import re
         match = re.match(r'(product[_\s]?\d+)', filename.lower())
         if match:
             product_id = match.group(1).replace(' ', '_')
@@ -133,11 +130,8 @@ async def process_batch_endpoint(files: List[UploadFile] = File(...), user: dict
                 product_groups[product_id] = []
             product_groups[product_id].append(file)
         else:
-            # Files without pattern will be distributed later
             unmatched_files.append(file)
     
-    # If there are unmatched files, ask user or distribute by upload order
-    # For now: group every 3 images as one product (standard: 3 images per product)
     if unmatched_files:
         logger.warning(f"⚠️  {len(unmatched_files)} arquivo(s) sem padrão 'productX_'. Agrupando a cada 3 imagens.")
         images_per_product = 3
@@ -146,10 +140,7 @@ async def process_batch_endpoint(files: List[UploadFile] = File(...), user: dict
             product_groups[product_key] = unmatched_files[i:i + images_per_product]
     
     logger.info(f"📦 {len(product_groups)} produto(s) identificado(s)")
-    for prod_key, prod_files in product_groups.items():
-        logger.info(f"  • {prod_key}: {len(prod_files)} imagem(ns)")
     
-    # Process each product group
     all_temp_files = []
     results = []
     total_images = 0
@@ -167,7 +158,6 @@ async def process_batch_endpoint(files: List[UploadFile] = File(...), user: dict
             
             try:
                 logger.info(f"📸 Salvando {len(product_files)} imagem(ns) temporariamente...")
-                # Save all images for this product as temporary files
                 for file in product_files:
                     with tempfile.NamedTemporaryFile(
                         delete=False, 
@@ -185,28 +175,20 @@ async def process_batch_endpoint(files: List[UploadFile] = File(...), user: dict
                     filenames.append(file.filename)
 
                 logger.info(f"🤖 Enviando imagens para Gemini (extração de dados)...")
-                # Send directly to Gemini - returns dict with gemini_response and product_image_path
                 gemini_result = send_to_gemini(image_paths, [], [], [])
                 gemini_response_text = gemini_result["gemini_response"]
                 product_image_path = gemini_result["product_image_path"]
-                logger.info(f"✅ Dados extraídos com sucesso!")
                 
-                # Parse product name
                 try:
                     gemini_data = json.loads(gemini_response_text.replace("```json", "").replace("```", "").strip())
                     product_name = gemini_data.get("nome_produto", "produto")
-                    logger.info(f"📝 Produto identificado: {product_name}")
                 except:
                     product_name = "produto"
-                    logger.warning(f"⚠️  Não foi possível parsear nome do produto")
+                    gemini_data = {}
                 
                 logger.info(f"🎨 Gerando imagens com fundo branco (Gemini 2.0)...")
-                # Generate images with Gemini 2.0 and upload to GCS
                 generated_result = generate_product_images_with_gemini(product_image_path, product_name, product_counter)
                 
-                logger.info(f"☁️  {generated_result['num_generated']} imagem(ns) gerada(s) e enviada(s) para GCS!")
-                
-                # Build response data with clean JSON structure
                 response_data = {
                     "nome_produto": gemini_data.get("nome_produto"),
                     "preco": gemini_data.get("preco"),
@@ -217,14 +199,28 @@ async def process_batch_endpoint(files: List[UploadFile] = File(...), user: dict
                     "num_generated": generated_result["num_generated"]
                 }
                 
-                logger.info(f"✅ Produto #{product_counter} processado com sucesso!\n")
-                
                 results.append(BatchProductResponse(
                     product_id=product_counter,
                     num_images=len(product_files),
                     filenames=filenames,
                     gemini_response=json.dumps(response_data, ensure_ascii=False, indent=2)
                 ))
+
+                # --- REGISTRO NO SUPABASE ---
+                try:
+                    log_entry = ScrapingLog(
+                        user_id=user.id, # Vincula ao Victor logado
+                        loja="processamento_lote",
+                        url_count=len(product_files),
+                        total_tokens=2500,  # Valor médio de tokens/produto
+                        total_cost_brl=0.20 # Custo estimado por produto processado
+                    )
+                    db.add(log_entry)
+                    db.commit()
+                    logger.info(f"📊 Log de scraping salvo no banco para {user.username}")
+                except Exception as db_err:
+                    db.rollback()
+                    logger.error(f"❌ Erro ao salvar log no Supabase: {db_err}")
                 
                 total_images += len(product_files)
                 product_counter += 1
@@ -240,31 +236,22 @@ async def process_batch_endpoint(files: List[UploadFile] = File(...), user: dict
                 ))
                 product_counter += 1
 
-        logger.info(f"\n{'='*60}")
+        # Finalização e Geração de Excel
         logger.info(f"🎉 Processamento concluído! {len(results)} produto(s) processado(s)")
-        logger.info(f"{'='*60}\n")
-        
-        # Generate Excel report
-        logger.info(f"\ud83d\udcc4 Gerando relat\u00f3rio Excel...")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         excel_filename = f"produtos_{timestamp}.xlsx"
         
-        # Extract clean data for Excel
         excel_data = []
         for result in results:
             if not result.error:
                 try:
-                    response_data = json.loads(result.gemini_response)
-                    response_data["product_id"] = result.product_id
-                    excel_data.append(response_data)
-                except:
-                    pass
+                    data = json.loads(result.gemini_response)
+                    data["product_id"] = result.product_id
+                    excel_data.append(data)
+                except: pass
         
         excel_path = generate_excel_report(excel_data, excel_filename) if excel_data else None
         excel_url = f"/exports/{excel_filename}" if excel_path else None
-        
-        if excel_url:
-            logger.info(f"\u2705 Excel dispon\u00edvel em: {excel_url}")
         
         response = BatchResponse(
             total_products=len(product_groups),
@@ -272,14 +259,13 @@ async def process_batch_endpoint(files: List[UploadFile] = File(...), user: dict
             products=results
         )
         
-        # Add excel_url to response (hacky but works for now)
         response_dict = response.dict()
         response_dict["excel_download_url"] = excel_url
         
         return response_dict
 
     finally:
-        # Cleanup all temporary files
+        # Limpeza de arquivos temporários
         for temp_file_path in all_temp_files:
             if os.path.exists(temp_file_path):
                 os.remove(temp_file_path)

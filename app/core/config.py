@@ -43,14 +43,19 @@ class Settings(BaseSettings):
     GCP_PROJECT_ID: str = os.getenv("GCP_PROJECT_ID", "gen-lang-client-0481115304")
     GCP_LOCATION: str = os.getenv("GCP_LOCATION", "us-central1")
     GCP_STORAGE_BUCKET: str = os.getenv("GCP_STORAGE_BUCKET", "bd-image-parser-products")
-    # GCP_SERVICE_ACCOUNT_KEY_PATH can be a JSON string or a file path
     GCP_SERVICE_ACCOUNT_KEY_PATH: str = os.getenv("GCP_SERVICE_ACCOUNT_KEY_PATH", "bd_image_parser_service_account.json")
     GCP_SERVICE_ACCOUNT_JSON: str = os.getenv("GCP_SERVICE_ACCOUNT_JSON", "")
     GCP_SERVICE_ACCOUNT_SECRET_NAME: str = os.getenv("GCP_SERVICE_ACCOUNT_SECRET_NAME", "bd-image-parser-sa-key")
     GCP_USE_SECRET_MANAGER: bool = os.getenv("GCP_USE_SECRET_MANAGER", "false").lower() == "true"
     
+    # --- SEGURANÇA E BANCO DE DADOS ---
+    DB_PASSWORD: str = ""
+    # CHAVE SECRETA PARA O JWT (ADICIONADA AQUI)
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "uma_chave_muito_secreta_e_longa_para_seguranca")
+
     class Config:
         case_sensitive = True
         env_file = ".env"
+        extra = "ignore" # Ignora variáveis extras no .env
 
 settings = Settings()

@@ -1,16 +1,23 @@
 """
 API routes for Sodimac product processing service with cost tracking.
-Versão Final: Integração total com Schemas financeiros e Relatório Excel.
+Versão Final: Integração total com Supabase, Segurança e Relatório Excel.
 """
 import logging
 from typing import List
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session
 
+# Importações de Schemas e Scrapers
 from app.services.sodimac.schemas import ProductUrlRequest, ProductData, BatchResponse
 from app.services.sodimac.scraper.url_extractor import extract_product_data
 from app.services.sodimac.scraper.gemini_client import get_gemini_client
+
+# Importações do Core do Sistema
 from app.core.config import settings
+from app.core.database import get_db
+from app.core.auth import get_current_user
+from app.models.entities import ScrapingLog
 from app.shared.excel_generator import generate_standard_excel
 
 logger = logging.getLogger(__name__)
@@ -23,11 +30,16 @@ USD_TO_BRL = 5.10
 router = APIRouter(prefix="/api/sodimac", tags=["Sodimac"])
 
 @router.post("/process-urls/", response_model=BatchResponse)
-async def process_product_urls(request: ProductUrlRequest) -> BatchResponse:
+async def process_product_urls(
+    request: ProductUrlRequest,
+    current_user = Depends(get_current_user), # Exige Login
+    db: Session = Depends(get_db)             # Conexão com Supabase
+) -> BatchResponse:
     """
-    Processa URLs da Sodimac, gera descrições via IA e calcula investimento real.
+    Processa URLs da Sodimac, gera descrições via IA, calcula investimento real
+    e salva o log de uso no Supabase.
     """
-    logger.info(f"🚀 Iniciando lote Sodimac: {len(request.urls)} URLs")
+    logger.info(f"🚀 Iniciando lote Sodimac: {len(request.urls)} URLs para {current_user.username}")
     
     if not request.urls:
         raise HTTPException(status_code=400, detail="Nenhuma URL fornecida")
@@ -36,12 +48,13 @@ async def process_product_urls(request: ProductUrlRequest) -> BatchResponse:
     all_products = []
     excel_data = []
     total_cost_batch_brl = 0.0
+    total_tokens_batch = 0
 
     for idx, url in enumerate(request.urls, 1):
         try:
             logger.info(f"📊 Processando {idx}/{len(request.urls)}: {url}")
 
-            # Passo 1: Extração HTML/Regex (Título, Preço, Marca, EAN, Imagens)
+            # Passo 1: Extração HTML/Regex
             product_info = extract_product_data(url)
             
             # Passo 2: Gemini para Descrição e Captura de Tokens
@@ -55,9 +68,12 @@ async def process_product_urls(request: ProductUrlRequest) -> BatchResponse:
             c_in = usage["input"] * COST_INPUT_USD * USD_TO_BRL
             c_out = usage["output"] * COST_OUTPUT_USD * USD_TO_BRL
             item_cost = c_in + c_out
+            
+            # Acumuladores para o Log
             total_cost_batch_brl += item_cost
+            total_tokens_batch += (usage["input"] + usage["output"])
 
-            # Passo 4: Montagem do Objeto de Resposta (Conforme Schema)
+            # Passo 4: Montagem do Objeto de Resposta
             product_response = ProductData(
                 titulo=titulo,
                 preco=product_info.get("preco", ""),
@@ -66,7 +82,6 @@ async def process_product_urls(request: ProductUrlRequest) -> BatchResponse:
                 descricao=descricao,
                 image_urls=product_info.get("image_urls", []),
                 url_original=url,
-                # Dados financeiros injetados aqui:
                 input_tokens=usage["input"],
                 output_tokens=usage["output"],
                 input_cost_brl=c_in,
@@ -86,6 +101,23 @@ async def process_product_urls(request: ProductUrlRequest) -> BatchResponse:
                 url_original=url, 
                 error=str(e)
             ))
+
+    # --- NOVO: SALVAR LOG NO SUPABASE ---
+    if all_products:
+        try:
+            log_entry = ScrapingLog(
+                user_id=current_user.id, # ID do Victor ou Admin
+                loja="sodimac",
+                url_count=len(request.urls),
+                total_tokens=total_tokens_batch,
+                total_cost_brl=total_cost_batch_brl
+            )
+            db.add(log_entry)
+            db.commit()
+            logger.info(f"📊 Log Sodimac salvo no Supabase para {current_user.username}")
+        except Exception as db_err:
+            db.rollback()
+            logger.error(f"❌ Falha ao salvar log no banco: {db_err}")
 
     # Passo 5: Geração do Relatório Excel
     excel_url = None

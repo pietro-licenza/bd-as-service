@@ -1,72 +1,61 @@
-"""
-Authentication and JWT utilities for BD | AS Platform
-"""
+# app/core/auth.py
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-
-# Secret key for JWT (should be kept secret in production)
-SECRET_KEY = "supersecretkey123"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
-
-# Hardcoded users (username: {name, password hash, loja})
-users_db = {
-    "admin": {"name": "Administrador", "hashed_password": "$2b$12$w1Qw1Qw1Qw1Qw1Qw1Qw1QeQw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Q", "loja": "todas"},
-    "teste": {"name": "teste", "hashed_password": "$2b$12$hHE9hoSmTf/pvVV.302zCOqIEzQiV4Oo8bqUUI4i0WNlRN74KXHGe", "loja": "todas"},
-    "victor.galeazzo": {
-        "name": "Victor Galeazzo", 
-        "hashed_password": "$2b$12$jHrBhRPRWSHPSNUvFN7Yg.Pvqg3bCt1BNBa32zqa3ob95yY9kfNI.", 
-        "loja": "brazil-direct"
-    },
-    "primo2": {"name": "Primo 2", "hashed_password": "$2b$12$w1Qw1Qw1Qw1Qw1Qw1Qw1QeQw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Q", "loja": "loja2"}
-}
+from fastapi import Depends, HTTPException, status, Request
+from sqlalchemy.orm import Session
+from app.core.database import get_db
+from app.models.entities import User
+from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 
 def verify_password(plain_password, hashed_password):
-    """Verifica se a senha digitada bate com o hash salvo."""
     return pwd_context.verify(plain_password, hashed_password)
 
-def get_user(username: str):
-    user = users_db.get(username)
-    if user:
-        return {"username": username, **user}
-    return None
-
-def authenticate_user(username: str, password: str):
-    user = get_user(username)
-    if not user:
-        return None
-    if not verify_password(password, user["hashed_password"]):
-        return None
-    return user
+def get_password_hash(password):
+    return pwd_context.hash(password)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=60*24))
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    # Usa a chave definida no config.py
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
 
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+async def get_current_user(request: Request, db: Session = Depends(get_db)):
+    # Tenta pegar o token do cookie
+    token = request.cookies.get("access_token")
+    
+    # Se não houver cookie, tenta o header
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token não encontrado")
+
+    # Remove prefixo Bearer se ele existir por engano no cookie
+    token = token.replace("Bearer ", "")
+
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        # Decodifica usando a chave do config.py
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
         username: str = payload.get("sub")
         if username is None:
-            raise credentials_exception
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     except JWTError:
-        raise credentials_exception
-    user = get_user(username)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
+        
+    user = db.query(User).filter(User.username == username).first()
     if user is None:
-        raise credentials_exception
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    return user
+
+async def authenticate_user(db: Session, username: str, password: str):
+    user = db.query(User).filter(User.username == username).first()
+    if not user or not verify_password(password, user.hashed_password):
+        return None
     return user
