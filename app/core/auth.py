@@ -4,7 +4,7 @@ Authentication and JWT utilities for BD | AS Platform
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
@@ -17,7 +17,11 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 users_db = {
     "admin": {"name": "Administrador", "hashed_password": "$2b$12$w1Qw1Qw1Qw1Qw1Qw1Qw1QeQw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Q", "loja": "todas"},
     "teste": {"name": "teste", "hashed_password": "$2b$12$hHE9hoSmTf/pvVV.302zCOqIEzQiV4Oo8bqUUI4i0WNlRN74KXHGe", "loja": "todas"},
-    "primo1": {"name": "Primo 1", "hashed_password": "$2b$12$w1Qw1Qw1Qw1Qw1Qw1Qw1QeQw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Q", "loja": "loja1"},
+    "victor.galeazzo": {
+        "name": "Victor Galeazzo", 
+        "hashed_password": "$2b$12$jHrBhRPRWSHPSNUvFN7Yg.Pvqg3bCt1BNBa32zqa3ob95yY9kfNI.", 
+        "loja": "brazil-direct"
+    },
     "primo2": {"name": "Primo 2", "hashed_password": "$2b$12$w1Qw1Qw1Qw1Qw1Qw1Qw1QeQw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Qw1Q", "loja": "loja2"}
 }
 
@@ -25,6 +29,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 
 def verify_password(plain_password, hashed_password):
+    """Verifica se a senha digitada bate com o hash salvo."""
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_user(username: str):
@@ -35,7 +40,9 @@ def get_user(username: str):
 
 def authenticate_user(username: str, password: str):
     user = get_user(username)
-    if not user or not verify_password(password, user["hashed_password"]):
+    if not user:
+        return None
+    if not verify_password(password, user["hashed_password"]):
         return None
     return user
 

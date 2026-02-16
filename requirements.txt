@@ -6,7 +6,7 @@ python-multipart
 # Google & AI
 google-genai
 google-cloud-storage
-google-cloud-secret-manager
+google-cloud-secret-manager.
 
 # Segurança (Ajustado para evitar o erro de 72 bytes)
 bcrypt==4.0.1

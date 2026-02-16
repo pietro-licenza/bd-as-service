@@ -1,148 +1,173 @@
 """
-Gemini API client for Sodimac product data extraction.
-
-This module uses Google's Gemini AI to extract product information
-by analyzing the product URL directly.
+Gemini API client for Sodimac product data extraction (SDK 2026).
+Versão Final: Metadados Técnicos + Copywriting + Retry Logic + Token Tracking.
 """
 import logging
 import json
+import re
+import time
 from google import genai
-from typing import Dict, List
-
+from typing import Dict, List, Optional
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-
 class SodimacGeminiClient:
-    """Client for interacting with Google Gemini API for Sodimac products."""
+    """Client para interação com a API Gemini otimizado para produtos Sodimac."""
 
     def __init__(self):
-        """Initialize Gemini client with API key from settings."""
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        self.model = genai.GenerativeModel(settings.GEMINI_MODEL_TEXT)
+        """Initialize Gemini client with SDK 2026 and safety checks."""
+        # Novo padrão de inicialização SDK 2026
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        
+        # Prevenção de AttributeError (conforme visto no log da Leroy)
+        self.model = getattr(settings, "GEMINI_MODEL_TEXT", "gemini-1.5-flash")
 
-    def extract_description_from_url(self, product_url: str, titulo: str) -> str:
+    def extract_product_data_from_url(self, product_url: str) -> Dict[str, any]:
         """
-        Extract product specifications and generate professional description.
-
-        This function is used in hybrid mode where Python regex extracts title/price/images,
-        and Gemini extracts specifications and generates a professional product description.
-
-        Args:
-            product_url: URL of the Sodimac product
-            titulo: Product title (already extracted by Python regex)
-
-        Returns:
-            Professional product description or empty string if extraction fails
+        Extrai metadados técnicos (Título, Preço, Marca, EAN) diretamente via IA.
+        Utilizado para garantir que dados difíceis de capturar via Regex sejam obtidos.
         """
-        logger.info(f"🤖 Extracting specifications and generating description with Gemini AI")
-        logger.info(f"📝 Product: {titulo}")
+        logger.info(f"🤖 [Sodimac] Extraindo dados técnicos da URL: {product_url}")
+        prompt = self._build_extraction_prompt(product_url)
+        
+        max_retries = 3
+        retry_delay = 2
 
+        for attempt in range(max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt
+                )
+                
+                # Parsing Robusto do JSON
+                json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
+                if not json_match:
+                    raise ValueError("JSON técnico não encontrado na resposta")
+                
+                data = json.loads(json_match.group(0))
+                
+                return {
+                    "titulo": data.get("titulo", ""),
+                    "preco": data.get("preco", ""),
+                    "marca": data.get("marca", ""),
+                    "ean": data.get("ean", ""),
+                    "especificacoes": data.get("especificacoes", []),
+                    "success": True
+                }
+
+            except Exception as e:
+                if "503" in str(e) or "429" in str(e):
+                    if attempt < max_retries - 1:
+                        logger.warning(f"⚠️ Google instável (Tentativa {attempt+1}). Retentando em {retry_delay}s...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
+                logger.error(f"❌ Erro na extração técnica Sodimac: {str(e)}")
+                return {"success": False, "error": str(e)}
+
+    def extract_description_from_url(self, product_url: str, titulo: str) -> Dict[str, any]:
+        """
+        Gera descrição profissional com 3 parágrafos e captura tokens para custo.
+        """
+        logger.info(f"🤖 [Sodimac] Gerando copywriting para: {titulo}")
         prompt = self._build_description_prompt(product_url, titulo)
-        response_text = ""
 
-        try:
-            response = self.model.generate_content(prompt)
+        max_retries = 3
+        retry_delay = 2 
 
-            if not response or not hasattr(response, 'text'):
-                logger.error(f"❌ Empty response from Gemini API")
-                return ""
+        for attempt in range(max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt
+                )
 
-            response_text = response.text
+                # Captura de Usage Metadata para o dashboard financeiro
+                usage = response.usage_metadata
+                u_data = {
+                    "input": int(getattr(usage, 'prompt_token_count', 0)),
+                    "output": int(getattr(usage, 'candidates_token_count', 0))
+                }
 
-            if not response_text or len(response_text.strip()) == 0:
-                logger.error(f"❌ Gemini returned empty text")
-                return ""
+                json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
+                if not json_match:
+                    return {"descricao": "", "usage": u_data}
 
-            logger.info(f"✅ Description received from Gemini ({len(response_text)} chars)")
+                data = json.loads(json_match.group(0))
+                descricao = data.get("descricao", "").strip()
 
-            # Parse JSON response
-            clean_json = response_text.replace("```json", "").replace("```", "").strip()
+                return {
+                    "descricao": descricao,
+                    "usage": u_data
+                }
 
-            if not clean_json:
-                logger.error(f"❌ Clean JSON is empty after removing markdown")
-                return ""
+            except Exception as e:
+                if "503" in str(e) or "429" in str(e):
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
+                
+                logger.error(f"❌ Erro final na descrição Sodimac: {str(e)}")
+                return {"descricao": "", "usage": {"input": 0, "output": 0}}
 
-            data = json.loads(clean_json)
+    def extract_batch_from_urls(self, product_urls: List[str]) -> List[Dict[str, any]]:
+        """Processamento sequencial de lote original preservado."""
+        results = []
+        for idx, url in enumerate(product_urls, 1):
+            logger.info(f"📊 Lote Sodimac: {idx}/{len(product_urls)}")
+            data = self.extract_product_data_from_url(url)
+            data["url_original"] = url
+            results.append(data)
+        return results
 
-            descricao = data.get("descricao", "")
+    # --- Builders de Prompt ---
 
-            if not isinstance(descricao, str):
-                logger.warning(f"⚠️  Description is not a string, converting...")
-                descricao = str(descricao) if descricao else ""
-
-            logger.info(f"✅ Description extracted successfully ({len(descricao)} characters)")
-            return descricao.strip()
-
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ JSON parsing error: {str(e)}")
-            logger.error(f"📄 Full response was: {response_text}")
-            return ""
-        except Exception as e:
-            logger.error(f"❌ Error extracting description: {str(e)}", exc_info=True)
-            if response_text:
-                logger.error(f"📄 Response was: {response_text[:1000]}")
-            return ""
+    def _build_extraction_prompt(self, product_url: str) -> str:
+        return f"""
+        TAREFA: Analise o HTML da Sodimac nesta URL: {product_url}
+        Extraia e retorne APENAS um JSON com:
+        - titulo
+        - preco (valor atual)
+        - marca
+        - ean (código de barras)
+        - especificacoes (lista de strings 'chave: valor')
+        
+        FORMATO:
+        {{
+            "titulo": "...",
+            "preco": "...",
+            "marca": "...",
+            "ean": "...",
+            "especificacoes": []
+        }}
+        """
 
     def _build_description_prompt(self, product_url: str, titulo: str) -> str:
+        return f"""
+        TAREFA: Copywriter para Sodimac.
+        PRODUTO: {titulo}
+        URL: {product_url}
+
+        Crie uma descrição profissional com MÍNIMO 3 parágrafos:
+        1. Aspectos físicos e design.
+        2. Funcionalidades e diferenciais técnicos.
+        3. Usos recomendados e benefícios.
+
+        REGRAS: Tom impessoal, sem emojis, sem HTML, sem preços.
+        Inclua resumo técnico linha a linha no final do texto.
+
+        FORMATO JSON:
+        {{"descricao": "Texto completo aqui..."}}
         """
-        Build the prompt for extracting specifications and generating description.
-
-        Args:
-            product_url: URL of the product to analyze
-            titulo: Product title
-
-        Returns:
-            Formatted prompt string
-        """
-        return f"""TAREFA: Acesse e analise a página do produto da Sodimac na URL fornecida.
-
-URL DO PRODUTO: {product_url}
-TÍTULO DO PRODUTO: {titulo}
-
-PASSO 1: Extraia TODAS as especificações técnicas do produto principal desta URL.
-
-Considere como produto principal apenas aquele cujo:
-- título corresponde ao H1 da página
-- código/SKU coincide com o código presente na URL
-- especificações técnicas estão no bloco de detalhes do produto
-
-Desconsidere totalmente:
-- produtos relacionados
-- carrosséis
-- recomendações
-- kits
-- variações
-- upsell/cross-sell
-
-PASSO 2: Com as especificações em mãos, crie uma descrição profissional seguindo estas regras:
-
-Crie uma descrição de anúncio profissional, bem redigida e completa para o produto: {titulo}.
-Use as especificações extraídas como base.
-
-A descrição deve:
-- Ser clara, informativa e atrativa, escrita em linguagem natural
-- Evitar emojis, HTML, preços, nomes de marcas, aspas e caracteres especiais no início/fim
-- Focar em benefícios e diferenciais do produto, com linguagem objetiva
-- Começar diretamente com a descrição, sem usar introduções como 'Descrição:' ou similares
-- Ter no mínimo 3 parágrafos, abordando características físicas, funcionais e usos recomendados
-- Utilizar tom impessoal e profissional, como um texto de vitrine de e-commerce bem elaborado
-- Fazer um resumo linha a linha das principais características e especificações do produto
-- Sem nenhuma quebra de linha dupla, pode pular linhas, mas sem deixar linhas em branco
-
-FORMATO DE RESPOSTA (JSON - retorne APENAS o JSON, sem texto adicional):
-{{
-    "descricao": "Texto completo da descrição profissional do produto..."
-}}"""
-
 
 # Singleton instance
 _gemini_client = None
 
-
 def get_gemini_client() -> SodimacGeminiClient:
-    """Get or create the Gemini client singleton."""
+    """Garante uma única instância do cliente."""
     global _gemini_client
     if _gemini_client is None:
         _gemini_client = SodimacGeminiClient()

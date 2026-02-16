@@ -1,8 +1,6 @@
-// Inicialização da página Leroy Merlin (placeholder)
-function initLeroyMerlinPage() {}
 /**
  * BD | AS Platform - Leroy Merlin Integration
- * URL-based product processing for Leroy Merlin
+ * Versão Completa: Visual Corrigido + Logs de Custo + Download Excel
  */
 
 // Leroy Merlin Page Template
@@ -41,7 +39,8 @@ const LeroyMerlinTemplate = () => `
     </div>
 
     <div class="results-section">
-        <h2>📊 Resultados</h2>
+        <div id="batchSummary" style="margin-bottom: 1.5rem;"></div>
+        <div id="downloadContainer"></div> <h2>📊 Resultados</h2>
         <div id="results">
             <div class="empty-state">
                 <div class="empty-state-icon">📭</div>
@@ -51,260 +50,139 @@ const LeroyMerlinTemplate = () => `
     </div>
 `;
 
-// Leroy Merlin Page Initialization
 function initLeroyMerlinPage() {
     const urlsTextarea = document.getElementById('urlsTextarea');
     const urlCount = document.getElementById('urlCount');
     const processUrlsBtn = document.getElementById('processUrlsBtn');
     const clearUrlsBtn = document.getElementById('clearUrlsBtn');
     const resultsDiv = document.getElementById('results');
+    const batchSummary = document.getElementById('batchSummary');
+    const downloadContainer = document.getElementById('downloadContainer');
 
-    // Reset state
-    AppState.reset();
+    if (typeof AppState !== 'undefined') { AppState.reset(); }
 
-    // Event Listeners
-    urlsTextarea.addEventListener('input', () => updateUrlCount());
-    processUrlsBtn.addEventListener('click', () => processUrls());
-    clearUrlsBtn.addEventListener('click', () => clearAll());
+    // Atualiza contador de URLs
+    urlsTextarea.addEventListener('input', () => {
+        const lines = urlsTextarea.value.trim().split('\n').filter(l => l.length > 10);
+        urlCount.textContent = `${lines.length} URLs`;
+    });
 
-    // Helper Functions
-    function updateUrlCount() {
-        const urls = getUrlsFromTextarea();
-        urlCount.textContent = `${urls.length} URLs`;
-        processUrlsBtn.disabled = urls.length === 0;
-    }
-
-    function getUrlsFromTextarea() {
-        const text = urlsTextarea.value.trim();
-        if (!text) return [];
-        
-        return text
-            .split('\n')
-            .map(url => url.trim())
-            .filter(url => url.length > 0 && url.startsWith('http'));
-    }
-
-    function clearAll() {
+    // Limpa a tela
+    clearUrlsBtn.addEventListener('click', () => {
         urlsTextarea.value = '';
-        updateUrlCount();
-        resultsDiv.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-state-icon">📭</div>
-                <p>Nenhum resultado ainda. Adicione URLs de produtos para processar.</p>
-            </div>
-        `;
-        AppState.resultCounter = 1;
-    }
+        urlCount.textContent = '0 URLs';
+        resultsDiv.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><p>Resultados limpos.</p></div>';
+        batchSummary.innerHTML = '';
+        downloadContainer.innerHTML = '';
+    });
 
-    // Clear only previous results (do not touch textarea)
-    function clearPreviousResults() {
-        resultsDiv.innerHTML = '';
-        AppState.resultCounter = 1;
-    }
-
-    async function processUrls() {
-        const urls = getUrlsFromTextarea();
-        
-        if (urls.length === 0) {
-            alert('Por favor, adicione pelo menos uma URL válida');
-            return;
-        }
-
-        // If there are existing results, ask user to confirm clearing them
-        const hasResults = !resultsDiv.querySelector('.empty-state') && resultsDiv.children.length > 0;
-        if (hasResults) {
-            let confirmed = true;
-            try {
-                if (window.showConfirmModal) {
-                    confirmed = await window.showConfirmModal('Já existem resultados na tela. Deseja iniciar uma nova execução e apagar os resultados anteriores?');
-                } else {
-                    confirmed = window.confirm('Já existem resultados na tela. Deseja iniciar uma nova execução e apagar os resultados anteriores?');
-                }
-            } catch (e) {
-                console.error('Confirm modal error:', e);
-                confirmed = window.confirm('Já existem resultados na tela. Deseja iniciar uma nova execução e apagar os resultados anteriores?');
-            }
-
-            if (!confirmed) return;
-            // Clear only previous results (keep textarea until after request)
-            clearPreviousResults();
-        }
+    // Processamento de URLs
+    processUrlsBtn.addEventListener('click', async () => {
+        const urls = urlsTextarea.value.trim().split('\n').filter(l => l.startsWith('http'));
+        if (urls.length === 0) return;
 
         processUrlsBtn.disabled = true;
         processUrlsBtn.innerHTML = '<span>⏳</span><span>Processando...</span>';
+        resultsDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>✨ Analisando produtos e gerando relatório Excel...</p></div>';
+        downloadContainer.innerHTML = ''; // Limpa download anterior
 
         try {
-            showLoading(urls.length);
-
             const response = await fetch('/api/leroy-merlin/process-urls/', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ urls })
             });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+            if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
+            const data = await response.json();
+            
+            // 1. Renderização da Barra de Investimento
+            batchSummary.innerHTML = `
+                <div style="background:var(--primary-color); color:white; padding:1.2rem; border-radius:10px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+                    <span>🎯 Lote concluído: <b>${data.total_products} itens</b></span>
+                    <span>💰 Investimento Total: <b>${formatBRL(data.total_cost_batch_brl)}</b></span>
+                </div>
+            `;
+
+            // 2. Renderização do Botão de Download do Excel (Igual ao Sodimac)
+            if (data.excel_download_url) {
+                downloadContainer.innerHTML = `
+                    <div class="download-card" style="background:rgba(0,168,89,0.1); border:1px solid #00A859; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;">
+                        <span style="color:#00A859; font-weight:600;">📊 Relatório Excel pronto para download!</span>
+                        <a href="${data.excel_download_url}" download class="btn btn-primary" style="background:#00A859; padding:8px 20px; text-decoration:none; font-size:0.9rem; color: white; border-radius: 5px;">⬇️ Baixar Excel</a>
+                    </div>
+                `;
             }
 
-            const data = await response.json();
-            displayResults(data);
+            // 3. Renderização dos cards de produtos
+            resultsDiv.innerHTML = data.products.map(p => {
+                if (p.error) {
+                    return `
+                    <div class="product-result error">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <h3>❌ Erro no Processamento</h3>
+                            <span class="badge" style="background:#ef4444; color:white;">Falha</span>
+                        </div>
+                        <p style="margin-top:10px;"><b>URL:</b> ${p.url_original}</p>
+                        <p style="color:#ef4444;">${p.error}</p>
+                    </div>`;
+                }
+                
+                return `
+                <div class="product-result">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1rem;">
+                        <h3 style="margin:0; color:var(--text-primary);">✅ ${p.titulo}</h3>
+                        <span class="badge" style="background:rgba(59,130,246,0.1); color:#3b82f6;">Investimento: ${formatBRL(p.total_cost_brl)}</span>
+                    </div>
 
-            // Clear textarea
-            urlsTextarea.value = '';
-            updateUrlCount();
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; background:rgba(0,0,0,0.25); padding:14px; border-radius:8px; margin-bottom:1.5rem; font-size:0.85rem; border:1px solid rgba(255,255,255,0.05);">
+                        <div style="border-right:1px solid #444; padding-right:10px;">
+                            <small style="color:#888; display:block; margin-bottom:4px;">📥 INPUT (PROMPT + URL)</small>
+                            <div style="display:flex; justify-content:space-between;">
+                                <b>${p.input_tokens} tks</b>
+                                <span style="color:#aaa;">${formatBRL(p.input_cost_brl)}</span>
+                            </div>
+                        </div>
+                        <div style="padding-left:5px;">
+                            <small style="color:#888; display:block; margin-bottom:4px;">📤 OUTPUT (IA + JSON)</small>
+                            <div style="display:flex; justify-content:space-between;">
+                                <b>${p.output_tokens} tks</b>
+                                <span style="color:#aaa;">${formatBRL(p.output_cost_brl)}</span>
+                            </div>
+                        </div>
+                    </div>
 
-        } catch (error) {
-            console.error('Processing error:', error);
-            displayError(error.message);
+                    <div class="product-data">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                            <p style="color:var(--success-color); font-size:1.8rem; font-weight:700; margin:0;">${p.preco}</p>
+                            <small style="color:#666;">Original: <a href="${p.url_original}" target="_blank" style="color:#3b82f6;">Ver na Leroy</a></small>
+                        </div>
+                        
+                        <div style="color:#ccc; line-height:1.7; margin-bottom:1.5rem; font-size:0.95rem; background:rgba(255,255,255,0.02); padding:15px; border-radius:8px;">
+                            ${p.descricao.replace(/\n/g, '<br>')}
+                        </div>
+                        
+                        <div style="display:flex; gap:12px; overflow-x:auto; padding-bottom:10px; scrollbar-width: thin;">
+                            ${p.image_urls.map(img => `
+                                <div class="image-wrapper" style="position:relative; flex-shrink:0;">
+                                    <img src="${img}" style="height:120px; border-radius:8px; border:1px solid #333; transition:transform 0.2s; cursor:pointer;" 
+                                         onclick="window.open('${img}')" 
+                                         onmouseover="this.style.transform='scale(1.05)'" 
+                                         onmouseout="this.style.transform='scale(1)'">
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        } catch (e) {
+            resultsDiv.innerHTML = `<div class="product-result error"><h3>❌ Erro Crítico</h3><p>${e.message}</p></div>`;
         } finally {
             processUrlsBtn.disabled = false;
             processUrlsBtn.innerHTML = '<span>🚀</span><span>Processar URLs</span>';
         }
-    }
-
-    function showLoading(count) {
-        const loadingHTML = `
-            <div class="loading">
-                <div class="spinner"></div>
-                <p class="loading-text">✨ Processando ${count} produto(s) com IA...</p>
-                <p style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem;">
-                    Extraindo imagens, análise de preços e geração de descrições
-                </p>
-                <p style="color: var(--text-light); font-size: 0.75rem; margin-top: 0.25rem;">
-                    Isso pode levar alguns instantes...
-                </p>
-            </div>
-        `;
-        
-        if (resultsDiv.querySelector('.empty-state')) {
-            resultsDiv.innerHTML = loadingHTML;
-        } else {
-            resultsDiv.insertAdjacentHTML('afterbegin', loadingHTML);
-        }
-    }
-
-    function displayResults(data) {
-        const loading = resultsDiv.querySelector('.loading');
-        const emptyState = resultsDiv.querySelector('.empty-state');
-        if (loading) loading.remove();
-        if (emptyState) emptyState.remove();
-
-        // Add Excel download link if available
-        if (data.excel_download_url) {
-            const downloadHTML = `
-                <div class="download-card">
-                    <h3>
-                        <span>📊</span>
-                        <span>Relatório Excel Gerado com Sucesso!</span>
-                    </h3>
-                    <a href="${data.excel_download_url}" download class="download-link">
-                        <span>⬇️</span>
-                        <span>Download dos Resultados em Excel</span>
-                    </a>
-                    <p style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem;">
-                        ${data.total_products} produto(s) processado(s)
-                    </p>
-                </div>
-            `;
-            resultsDiv.insertAdjacentHTML('afterbegin', downloadHTML);
-        }
-
-        data.products.forEach((product, index) => {
-            const isError = product.error !== undefined && product.error !== null;
-            
-            // Product images HTML
-            let imagesHTML = '';
-            if (product.image_urls && product.image_urls.length > 0) {
-                const imageCards = product.image_urls.map((url, idx) => `
-                    <div style="flex: 1; min-width: 150px; max-width: 200px;">
-                        <img src="${url}" alt="Imagem ${idx + 1}" style="width: 100%; border-radius: 8px; box-shadow: var(--shadow-sm); cursor: pointer;" onclick="window.open('${url}', '_blank')">
-                        <p style="text-align: center; font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.5rem;">Imagem ${idx + 1}</p>
-                    </div>
-                `).join('');
-                
-                imagesHTML = `
-                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
-                        <h4 style="color: var(--text-primary); margin-bottom: 0.75rem; font-size: 1rem;">
-                            🖼️ Imagens do Produto (${product.image_urls.length})
-                        </h4>
-                        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                            ${imageCards}
-                        </div>
-                    </div>
-                `;
-            }
-            
-            // Description HTML
-            let descriptionHTML = '';
-            if (product.descricao && product.descricao.trim().length > 0) {
-                // Format description with line breaks
-                const formattedDesc = product.descricao.split('\n').map(line => `<p style="margin: 0.5rem 0; color: var(--text-secondary); line-height: 1.6;">${line}</p>`).join('');
-                descriptionHTML = `
-                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
-                        <h4 style="color: var(--text-primary); margin-bottom: 0.75rem; font-size: 1rem;">
-                            📋 Descrição do Produto
-                        </h4>
-                        <div style="color: var(--text-secondary);">
-                            ${formattedDesc}
-                        </div>
-                    </div>
-                `;
-            }
-            
-            const resultHTML = `
-                <div class="product-result ${isError ? 'error' : ''}">
-                    <h3>
-                        <span>${isError ? '❌' : '✅'} Produto #${AppState.resultCounter++}</span>
-                        <span class="badge">
-                            <span>🏠</span>
-                            <span>Leroy Merlin</span>
-                        </span>
-                    </h3>
-                    <div class="files-info">
-                        🔗 URL: <a href="${product.url_original}" target="_blank" style="color: var(--primary-color);">${product.url_original}</a>
-                    </div>
-                    <div class="product-data">
-                        ${isError ? 
-                            `<p style="color: var(--danger-color); font-weight: 500; margin: 0;"><strong>⚠️ Erro:</strong> ${product.error}</p>` :
-                            `
-                            <div style="background: rgba(255, 255, 255, 0.05); padding: 1.25rem; border-radius: 8px;">
-                                <h4 style="color: var(--text-primary); margin-bottom: 0.75rem; font-size: 1.125rem;">${product.titulo}</h4>
-                                <p style="color: var(--success-color); font-size: 1.5rem; font-weight: 700; margin: 0.5rem 0;">${product.preco}</p>
-                                ${product.marca ? `<p style="color: var(--text-secondary); margin: 0.5rem 0;"><strong>🏷️ Marca:</strong> ${product.marca}</p>` : ''}
-                                ${product.ean ? `<p style="color: var(--text-secondary); margin: 0.5rem 0;"><strong>🔢 EAN:</strong> ${product.ean}</p>` : ''}
-                                ${descriptionHTML}
-                            </div>
-                            ${imagesHTML}
-                            `
-                        }
-                    </div>
-                </div>
-            `;
-
-            resultsDiv.insertAdjacentHTML('beforeend', resultHTML);
-        });
-    }
-
-    function displayError(message) {
-        const loading = resultsDiv.querySelector('.loading');
-        if (loading) loading.remove();
-
-        const errorHTML = `
-            <div class="product-result error">
-                <h3>
-                    <span>❌ Erro no Processamento</span>
-                </h3>
-                <div class="product-data">
-                    <p style="color: var(--danger-color); font-weight: 500; margin: 0;">
-                        <strong>⚠️ Erro:</strong> ${message}
-                    </p>
-                </div>
-            </div>
-        `;
-
-        resultsDiv.insertAdjacentHTML('afterbegin', errorHTML);
-    }
+    });
 }
