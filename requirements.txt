@@ -1,19 +1,23 @@
+# Web & Server
 fastapi
 uvicorn
 python-multipart
-pyyaml
+
+# Google & AI
 google-genai
-Pillow
 google-cloud-storage
 google-cloud-secret-manager
+
+# Segurança (Ajustado para evitar o erro de 72 bytes)
+bcrypt==4.0.1
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]
+
+# Processamento de Dados & Templates
+Pillow
 openpyxl
 jinja2
-pydantic-settings
+pyyaml
 requests
 beautifulsoup4
-
-# Autenticação JWT e utilitários
-python-jose[cryptography]
-passlib[bcrypt]
-python-multipart
-uvicorn
+pydantic-settings
