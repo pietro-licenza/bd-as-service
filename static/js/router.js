@@ -16,8 +16,6 @@ class Router {
 
     /**
      * Register a route with its configuration
-     * @param {string} path - Route path (e.g., '/', '/integracoes/sams')
-     * @param {Object} config - Route configuration {title, render, onMount, navId}
      */
     addRoute(path, config) {
         this.routes.set(path, config);
@@ -27,7 +25,6 @@ class Router {
      * Navigate to the current hash route
      */
     navigate() {
-        // Proteção: se não estiver logado, redireciona para /login
         const token = localStorage.getItem('access_token');
         const isLoginPage = window.location.pathname === '/login';
         if (!token && !isLoginPage) {
@@ -52,66 +49,62 @@ class Router {
 
     /**
      * Update navigation active states
-     * @param {string} hash - Current route hash
      */
     updateNavigation(hash) {
-        // Clear all active states
         document.querySelectorAll('.nav-link, .nav-subitem').forEach(el => {
             el.classList.remove('active');
         });
 
-        // Set active based on route
         if (hash === '/') {
             document.getElementById('nav-dashboard')?.classList.add('active');
-        } else if (hash === '/integracoes/sams') {
-            document.getElementById('nav-sams-club')?.classList.add('active');
-            this.expandIntegrations();
-        } else if (hash === '/integracoes/leroy') {
-            document.getElementById('nav-leroy-merlin')?.classList.add('active');
-            this.expandIntegrations();
-        } else if (hash === '/integracoes/sodimac') {
-            document.getElementById('nav-sodimac')?.classList.add('active');
-            this.expandIntegrations();
+        } else if (hash.startsWith('/integracoes/')) {
+            const service = hash.split('/').pop();
+            const navMap = {
+                'sams': 'nav-sams-club',
+                'leroy': 'nav-leroy-merlin',
+                'sodimac': 'nav-sodimac',
+                'outras': 'nav-other-integration'
+            };
+            document.getElementById(navMap[service])?.classList.add('active');
+            this.expandSubmenu('nav-integrations');
+        } else if (hash === '/dashboard/ai-custos') {
+            document.getElementById('nav-ai-custos')?.classList.add('active');
+            this.expandSubmenu('nav-dashboards-parent');
         }
     }
 
-    /**
-     * Expand the integrations submenu
-     */
-    expandIntegrations() {
-        const integrationsNav = document.getElementById('nav-integrations');
-        if (integrationsNav) {
-            integrationsNav.classList.add('active', 'expanded');
-            const submenu = integrationsNav.nextElementSibling;
+    expandSubmenu(parentId) {
+        const parentNav = document.getElementById(parentId);
+        if (parentNav) {
+            parentNav.classList.add('active', 'expanded');
+            const submenu = parentNav.nextElementSibling;
             if (submenu) {
                 submenu.classList.add('open');
             }
         }
     }
 
-    /**
-     * Initialize sidebar navigation toggles
-     */
     initSidebarToggles() {
-        const integrationsNav = document.getElementById('nav-integrations');
-        if (integrationsNav) {
-            integrationsNav.addEventListener('click', (e) => {
-                if (!e.target.closest('a[href]')) {
-                    e.preventDefault();
-                    const submenu = integrationsNav.nextElementSibling;
-                    
-                    if (submenu.classList.contains('open')) {
-                        submenu.classList.remove('open');
-                        integrationsNav.classList.remove('expanded');
-                    } else {
-                        submenu.classList.add('open');
-                        integrationsNav.classList.add('expanded');
+        const parentIds = ['nav-integrations', 'nav-dashboards-parent'];
+        parentIds.forEach(id => {
+            const navElement = document.getElementById(id);
+            if (navElement) {
+                navElement.addEventListener('click', (e) => {
+                    if (!e.target.closest('a[href]')) {
+                        e.preventDefault();
+                        const submenu = navElement.nextElementSibling;
+                        if (submenu.classList.contains('open')) {
+                            submenu.classList.remove('open');
+                            navElement.classList.remove('expanded');
+                        } else {
+                            submenu.classList.add('open');
+                            navElement.classList.add('expanded');
+                        }
                     }
-                }
-            });
-        }
+                });
+            }
+        });
     }
 }
 
-// Export router instance
 const router = new Router();

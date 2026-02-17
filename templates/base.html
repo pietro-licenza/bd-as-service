@@ -11,6 +11,8 @@
     
     <link rel="stylesheet" href="/static/css/main.css">
     
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -59,6 +61,23 @@
             </div>
 
             <div class="nav-section">
+                <div class="nav-section-title">Monitoramento</div>
+                <div class="nav-item">
+                    <a class="nav-link" id="nav-dashboards-parent">
+                        <span class="nav-icon">📈</span>
+                        <span class="nav-text">Dashboards</span>
+                        <span class="nav-arrow">▶</span>
+                    </a>
+                    <div class="nav-submenu">
+                        <a href="#/dashboard/ai-custos" class="nav-subitem" id="nav-ai-custos">
+                            <span>💰</span>
+                            <span>AI - Custos</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-section">
                 <div class="nav-section-title">Configurações</div>
                 <div class="nav-item">
                     <a class="nav-link" id="nav-settings">
@@ -99,21 +118,17 @@
     <script src="/static/js/pages/samsClub.js"></script>
     <script src="/static/js/pages/leroyMerlin.js"></script>
     <script src="/static/js/pages/sodimac.js"></script>
+    <script src="/static/js/pages/dashboard.js"></script>
     <script src="/static/js/app.js"></script>
     
     <script>
-    // Exibe usuário logado e faz logout
     document.addEventListener('DOMContentLoaded', function() {
         const btn = document.getElementById('logout-btn');
         const usernameSpan = document.getElementById('username');
         
-        // Decodifica o JWT para pegar o username
         function parseJwt (token) {
-            try { 
-                return JSON.parse(atob(token.split('.')[1])); 
-            } catch (e) { 
-                return {}; 
-            }
+            try { return JSON.parse(atob(token.split('.')[1])); } 
+            catch (e) { return {}; }
         }
         
         const token = localStorage.getItem('access_token');

@@ -17,6 +17,7 @@ from app.api.routes.web import router as web_router
 from app.services.sams_club.api.routes import router as sams_club_router
 from app.services.leroy_merlin.api.routes import router as leroy_merlin_router
 from app.services.sodimac.api.routes import router as sodimac_router
+from app.api.dashboard import router as dashboard_router
 
 # Configure logging
 logging.basicConfig(
@@ -29,7 +30,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- AJUSTE PARA PRODUÇÃO: CRIAÇÃO DE DIRETÓRIOS ---
-# Garante que as pastas existam antes do app tentar montá-las
 for directory in [settings.STATIC_DIR, settings.EXPORTS_DIR]:
     if not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
@@ -56,26 +56,25 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router, prefix="/api", tags=["Auth"])
 app.include_router(main_router, tags=["API"])
+app.include_router(dashboard_router, tags=["Dashboard"])
 app.include_router(sams_club_router, tags=["Sam's Club"])
 app.include_router(leroy_merlin_router, tags=["Leroy Merlin"])
 app.include_router(sodimac_router, tags=["Sodimac"])
 app.include_router(web_router, tags=["Web"])
 
-# Mount static files (CSS, JS, images)
-# Usamos str() para garantir compatibilidade do Path com o Starlette
+# Mount static files
 app.mount("/static", StaticFiles(directory=str(settings.STATIC_DIR)), name="static")
 
-# Mount exports directory (Excel downloads)
+# Mount exports directory
 app.mount("/exports", StaticFiles(directory=str(settings.EXPORTS_DIR)), name="exports")
 
 if __name__ == "__main__":
     import uvicorn
-    # Em produção, o Cloud Run usa a variável de ambiente PORT
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=port,
-        reload=False, # Desativar reload em produção por performance
+        reload=False, 
         log_level="info"
     )

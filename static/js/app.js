@@ -57,10 +57,17 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.href = '/login';
         return;
     }
+    
     // Register routes
     router.addRoute('/', {
         title: 'Home',
         render: HomeTemplate
+    });
+
+    router.addRoute('/dashboard/ai-custos', {
+        title: 'AI - Custos',
+        render: DashboardTemplate,
+        onMount: initDashboardPage
     });
 
     router.addRoute('/integracoes/sams', {
@@ -84,8 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize sidebar toggles
     router.initSidebarToggles();
 
-    // Inject global confirm modal markup (hidden) BEFORE navigating so pages
-    // can use it during their onMount handlers.
+    // Inject global confirm modal markup
     const modalHTML = `
         <div id="__confirm_modal_backdrop" class="confirm-modal-backdrop" aria-hidden="true">
             <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="__confirm_modal_title">
@@ -100,7 +106,6 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
     document.body.insertAdjacentHTML('beforeend', modalHTML);
 
-    // Wire up modal buttons
     const modalBackdrop = document.getElementById('__confirm_modal_backdrop');
     const modalMessage = document.getElementById('__confirm_modal_message');
     const modalConfirmBtn = document.getElementById('__confirm_modal_confirm');
@@ -115,7 +120,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return new Promise((resolve) => {
             __confirmResolve = resolve;
-            // focus confirm for quick action
             setTimeout(() => modalConfirmBtn.focus(), 50);
         });
     }
@@ -137,7 +141,6 @@ document.addEventListener('DOMContentLoaded', () => {
         hideConfirmModal();
     });
 
-    // Close modal on backdrop click
     modalBackdrop.addEventListener('click', (e) => {
         if (e.target === modalBackdrop) {
             if (__confirmResolve) __confirmResolve(false);
@@ -146,7 +149,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Close on Esc
     window.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modalBackdrop.classList.contains('open')) {
             if (__confirmResolve) __confirmResolve(false);
@@ -155,9 +157,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Expose globally
     window.showConfirmModal = showConfirmModal;
-
-    // Navigate to current hash
     router.navigate();
 });
