@@ -33,12 +33,11 @@ USD_TO_BRL = 5.10
 async def process_batch(
     request: Request, 
     files: List[UploadFile] = File(...),
-    user = Depends(get_current_user), # Exige Victor/Admin logado
-    db: Session = Depends(get_db)      # Conexão Supabase
+    user = Depends(get_current_user), 
+    db: Session = Depends(get_db)
 ) -> BatchResponse:
     """
-    Processa lote de imagens do Sam's Club, remove fundo se solicitado,
-    calcula custos e salva o log de uso no Supabase.
+    Processa lote Sam's Club: Step 1 (Dados), Step 2 (Fundo Branco), Step 3 (Ambientada).
     """
     logger.info(f"🚀 Lote Sam's Club recebido de {user.username}")
     
@@ -54,7 +53,6 @@ async def process_batch(
     gemini_client = GeminiClient()
     all_products = []
     
-    # Variáveis para o Log do Banco
     total_batch_tokens = 0
     total_batch_cost_brl = 0.0
 
@@ -66,48 +64,65 @@ async def process_batch(
                 content = await file.read()
                 t_path = Path(temp_dir) / file.filename
                 with open(t_path, "wb") as f: f.write(content)
-                
-                # Conversão necessária para Sam's Club
                 from app.shared.gemini_client import convert_mpo_to_jpeg
                 conv_p, _ = convert_mpo_to_jpeg(str(t_path))
                 temp_paths.append(conv_p)
 
             remove_bg = form.get(f'remove_background_{i}') == 'true'
+            generate_contextual = form.get(f'generate_contextual_{i}') == 'true'
 
-            # Passo 1: Extração de Dados
+            # --- Passo 1: Extração de Dados ---
             result = gemini_client.step1_extract_product_data(temp_paths)
             u1 = result.get("usage", {"input": 0, "output": 0})
-            
-            gen_urls, u2 = [], {"input": 0, "output": 0}
             err_msg = result.get("error")
+            infos = result.get("infos_extraidas", {})
+            p_name = infos.get("nome", "produto")
 
-            # Passo 2: Geração de Imagem (Background Removal)
+            gen_urls = []
+            u2 = {"input": 0, "output": 0}
+            u3 = {"input": 0, "output": 0}
+            local_clean_path = None
+
+            # --- Passo 2: Remoção de Fundo ---
             if remove_bg and not err_msg:
-                infos = result.get("infos_extraidas", {})
                 idx_ia = int(infos.get("foto_ideal_index", 1))
                 idx = (idx_ia - 1) if idx_ia > 0 else 0
-                
                 if 0 <= idx < len(temp_paths):
                     gen_res = gemini_client.step2_generate_background_removed_image(temp_paths[idx])
-                    gen_urls = gen_res.get("public_urls", [])
+                    if gen_res.get("public_urls"):
+                        gen_urls.extend(gen_res["public_urls"])
+                        local_clean_path = gen_res.get("local_path")
                     u2 = gen_res.get("usage", {"input": 0, "output": 0})
                     if gen_res.get("error"): err_msg = gen_res.get("error")
 
-            # Cálculo de Tokens e Custos deste Produto
-            t_in = (u1.get("input") or 0) + (u2.get("input") or 0)
-            t_out = (u1.get("output") or 0) + (u2.get("output") or 0)
+            # --- Passo 3: Geração Ambientada (Novo) ---
+            if generate_contextual and not err_msg:
+                # Usa a imagem limpa do step 2 se existir, senão usa a original eleita
+                source_img = local_clean_path if local_clean_path else temp_paths[idx]
+                ctx_res = gemini_client.step3_generate_contextual_image(source_img, p_name)
+                if ctx_res.get("public_urls"):
+                    gen_urls.extend(ctx_res["public_urls"])
+                u3 = ctx_res.get("usage", {"input": 0, "output": 0})
+                if ctx_res.get("error"): err_msg = ctx_res.get("error")
+
+            # Cálculo Financeiro 360
+            t_in = (u1.get("input") or 0) + (u2.get("input") or 0) + (u3.get("input") or 0)
+            t_out = (u1.get("output") or 0) + (u2.get("output") or 0) + (u3.get("output") or 0)
             
             c_in = (t_in / 1_000_000) * COST_INPUT_USD * USD_TO_BRL
             c_out = (t_out / 1_000_000) * COST_OUTPUT_USD * USD_TO_BRL
             item_cost = c_in + c_out
 
-            # Acumula para o log final do lote
             total_batch_tokens += (t_in + t_out)
             total_batch_cost_brl += item_cost
 
+            # Limpeza do path temporário do Step 2
+            if local_clean_path and os.path.exists(local_clean_path):
+                os.remove(local_clean_path)
+
             product_response = BatchProductResponse(
                 product_id=product_id, num_images=len(product_files),
-                filenames=[f.filename for f in product_files], prompt="Análise Profissional",
+                filenames=[f.filename for f in product_files], prompt="Análise e Ambientação",
                 gemini_response=result.get("gemini_response", "{}"),
                 generated_images_urls=gen_urls, error=err_msg,
                 input_tokens=int(t_in), input_cost_brl=round(c_in, 6),
@@ -119,21 +134,17 @@ async def process_batch(
         finally: 
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    # --- SALVAR LOG NO SUPABASE ---
     if all_products:
         try:
             log_entry = ScrapingLog(
-                user_id=user.id,
-                loja="sams_club",
-                url_count=len(all_products),
-                total_tokens=total_batch_tokens,
+                user_id=user.id, loja="sams_club",
+                url_count=len(all_products), total_tokens=total_batch_tokens,
                 total_cost_brl=total_batch_cost_brl
             )
             db.add(log_entry)
             db.commit()
-            logger.info(f"📊 Log Sam's Club salvo no Supabase para {user.username}")
         except Exception as db_err:
             db.rollback()
-            logger.error(f"❌ Erro ao salvar log no banco: {db_err}")
+            logger.error(f"❌ Erro log: {db_err}")
 
     return BatchResponse(products=all_products, total_products=len(all_products))

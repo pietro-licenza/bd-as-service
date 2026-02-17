@@ -2,11 +2,9 @@
 
 /**
  * Peso estimado em tokens do Prompt que reside no Backend (gemini_client.py).
- * Isso evita a duplicidade de texto e mantém a estimativa de custo precisa.
  */
 const SYSTEM_PROMPT_WEIGHT = 350; 
 
-// Função para formatar valores em Reais (BRL)
 const formatBRL = (val) => {
     return (val || 0).toLocaleString('pt-BR', { 
         style: 'currency', 
@@ -19,19 +17,19 @@ const formatBRL = (val) => {
  * Estimativa visual antes do processamento (Pre-processamento)
  * @param {number} numImages - Quantidade de fotos selecionadas
  * @param {boolean} removeBackground - Se a flag de remoção de fundo está ativa
+ * @param {boolean} generateContextual - Se a flag de ambiente está ativa
  */
-function estimateGeminiCost(numImages, removeBackground) {
+function estimateGeminiCost(numImages, removeBackground, generateContextual) {
     const tokensPrompt = SYSTEM_PROMPT_WEIGHT;
-    // Média de tokens para imagem redimensionada a 800px no Gemini 1.5/2.x
     const tokensImages = numImages * 258; 
-    // Estimativa de tokens de saída para o JSON e possível remoção de fundo
-    const tokensGeneration = removeBackground ? 1200 : 400; 
+    let tokensGeneration = 400; 
+    
+    if (removeBackground) tokensGeneration += 800;
+    if (generateContextual) tokensGeneration += 1000;
     
     const totalTokens = tokensPrompt + tokensImages + tokensGeneration;
-    
-    // Estimativa baseada nos preços do Gemini 2.5 Flash Lite
     const usd = (totalTokens / 1000000) * 0.075;
-    const brl = usd * 5.10; // Cotação estimada
+    const brl = usd * 5.10; 
     
     return { tokens: totalTokens, brl: brl };
 }
@@ -40,12 +38,12 @@ function estimateGeminiCost(numImages, removeBackground) {
 const SamsClubTemplate = () => `
     <div class="page-header">
         <h1>🛒 Processador de Imagens Sam's Club</h1>
-        <p>Análise inteligente de produtos com IA para extração automática de informações</p>
+        <p>Análise inteligente com extração automática e ambientação fotográfica por IA</p>
     </div>
 
     <div class="upload-section">
         <h2>Processar Produtos</h2>
-        <p>Adicione produtos e suas respectivas imagens. O sistema usará o prompt oficial do servidor para análise.</p>
+        <p>Adicione produtos e suas respectivas imagens. O sistema usará o prompt oficial do servidor para análise e criação de ambientes.</p>
         
         <div id="productsContainer"></div>
         
@@ -130,6 +128,10 @@ function initSamsClubPage() {
                     <input type="checkbox" id="removeBackground-${productId}" style="accent-color: var(--primary-color); width: 1.1rem; height: 1.1rem;">
                     <span style="color: var(--text-primary);">Remover Fundo da Imagem</span>
                 </label>
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" id="generateContextual-${productId}" style="accent-color: var(--primary-color); width: 1.1rem; height: 1.1rem;">
+                    <span style="color: var(--text-primary);">Gerar Imagem Ambientada (Step 3)</span>
+                </label>
             </div>
             <div class="cost-estimate" id="costEstimate-${productId}" style="margin-top: 0.8rem; padding: 0.5rem; background: rgba(255,255,255,0.03); border-radius: 4px; color: var(--text-secondary); font-size: 0.85rem; border-left: 3px solid var(--primary-color);"></div>
             <div class="selected-files" id="files-${productId}">
@@ -138,12 +140,13 @@ function initSamsClubPage() {
         `;
         
         productsContainer.appendChild(productDiv);
-        AppState.batchProducts.push({ id: productId, files: [], extractInfos: true, removeBackground: false });
+        AppState.batchProducts.push({ id: productId, files: [], extractInfos: true, removeBackground: false, generateContextual: false });
 
         const fileInput = document.getElementById(`fileInput-${productId}`);
         const removeBtn = productDiv.querySelector('.remove-btn');
         const extractInfosFlag = document.getElementById(`extractInfosFlag-${productId}`);
         const removeBackgroundFlag = document.getElementById(`removeBackground-${productId}`);
+        const generateContextualFlag = document.getElementById(`generateContextual-${productId}`);
         
         fileInput.addEventListener('change', (e) => handleFileSelect(productId, e.target.files));
         extractInfosFlag.addEventListener('change', (e) => {
@@ -156,6 +159,11 @@ function initSamsClubPage() {
             if (p) p.removeBackground = e.target.checked;
             updateCost(productId);
         });
+        generateContextualFlag.addEventListener('change', (e) => {
+            const p = AppState.batchProducts.find(x => x.id === productId);
+            if (p) p.generateContextual = e.target.checked;
+            updateCost(productId);
+        });
         removeBtn.addEventListener('click', () => removeProduct(productId));
         updateCost(productId);
         updateUI();
@@ -166,10 +174,7 @@ function initSamsClubPage() {
         const costDiv = document.getElementById(`costEstimate-${productId}`);
         if (!product || !costDiv) return;
 
-        // Se extractInfos estiver off, o prompt do sistema não é processado
-        const currentPromptWeight = product.extractInfos ? SYSTEM_PROMPT_WEIGHT : 0;
-        const estimate = estimateGeminiCost(product.files.length, product.removeBackground);
-        
+        const estimate = estimateGeminiCost(product.files.length, product.removeBackground, product.generateContextual);
         costDiv.innerHTML = `<span>💡 Estimativa: <b>${estimate.tokens}</b> tokens ≈ <b style="color:var(--primary-color)">${formatBRL(estimate.brl)}</b></span>`;
     }
 
@@ -216,13 +221,14 @@ function initSamsClubPage() {
         const productsWithFiles = AppState.batchProducts.filter(p => p.files.length > 0);
         if (productsWithFiles.length === 0) return;
 
-        resultsDiv.innerHTML = '<div class="loading">🚀 Processando Lote... Isso pode levar alguns segundos.</div>';
+        resultsDiv.innerHTML = '<div class="loading">🚀 Processando Lote (Passos 1 a 3)... Isso pode levar alguns segundos.</div>';
         processBatchBtn.disabled = true;
 
         const formData = new FormData();
         productsWithFiles.forEach((product, index) => {
             formData.append(`extract_infos_${index + 1}`, product.extractInfos);
             formData.append(`remove_background_${index + 1}`, product.removeBackground);
+            formData.append(`generate_contextual_${index + 1}`, product.generateContextual);
             product.files.forEach((file, fIdx) => {
                 formData.append('files', new File([file], `product${index + 1}_img${fIdx + 1}.${file.name.split('.').pop()}`, { type: file.type }));
             });
@@ -234,7 +240,6 @@ function initSamsClubPage() {
             const data = await response.json();
             displayResults(data);
 
-            // Limpa formulário após sucesso para nova rodada
             productsContainer.innerHTML = '';
             AppState.batchProducts = [];
             AppState.productIdCounter = 1;
@@ -252,12 +257,11 @@ function initSamsClubPage() {
         resultsDiv.innerHTML = '';
         const products = data.products || [];
         
-        // Calcular total real do lote (vindo do Backend)
         const batchTotalBRL = products.reduce((sum, p) => sum + (p.total_cost_brl || 0), 0);
         batchSummary.innerHTML = `
             <div style="background: var(--primary-color); color: white; padding: 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
                 <span>🎯 Lote concluído: <b>${products.length} produtos</b></span>
-                <span>💰 Investimento real: <b>${formatBRL(batchTotalBRL)}</b></span>
+                <span>💰 Investimento real total: <b>${formatBRL(batchTotalBRL)}</b></span>
             </div>
         `;
 
@@ -265,8 +269,8 @@ function initSamsClubPage() {
             const isError = product.error;
             let imagesHTML = '';
             if (product.generated_images_urls?.length > 0) {
-                imagesHTML = `<div style="display:flex; gap:10px; margin-top:10px;">` + 
-                    product.generated_images_urls.map(url => `<img src="${url}" style="width:120px; border-radius:4px; border:1px solid #444; cursor:pointer;" onclick="window.open('${url}')">`).join('') + 
+                imagesHTML = `<div style="display:flex; gap:10px; margin-top:10px; overflow-x: auto;">` + 
+                    product.generated_images_urls.map(url => `<img src="${url}" style="height:120px; border-radius:4px; border:1px solid #444; cursor:pointer;" onclick="window.open('${url}')" title="Clique para abrir">`).join('') + 
                     `</div>`;
             }
 

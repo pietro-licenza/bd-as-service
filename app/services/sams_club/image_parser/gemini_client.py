@@ -100,8 +100,6 @@ class GeminiClient:
                 with PIL.Image.open(image_path).convert('RGB') as img:
                     img = self._resize_image(img, max_size=1024) 
                     
-                    # PROMPT FINAL E DEFINITIVO
-                    # Adicionamos "perfect front view" para forçar a IA a redesenhar de frente.
                     prompt = (
                         "Product background removal. "
                         "Mandatory: Recreate the product in a perfect front view, standing vertically. "
@@ -115,7 +113,6 @@ class GeminiClient:
                         config=types.GenerateContentConfig(safety_settings=self.safety_settings)
                     )
                     
-                    # ... (o resto da lógica de salvar a imagem e tratar erro permanece igual) ...
                     usage = response.usage_metadata
                     u_data = {
                         "input": int(usage.prompt_token_count or 0), 
@@ -143,14 +140,66 @@ class GeminiClient:
 
                     filename = f"sams_bg_removed_{datetime.now().strftime('%H%M%S')}.png"
                     public_url = storage_client.upload_image(temp_path, filename)
-                    os.remove(temp_path)
-
-                    return {"public_urls": [public_url], "usage": u_data}
+                    
+                    # Retornamos o path local para o step 3 poder usar sem baixar de novo
+                    return {"public_urls": [public_url], "local_path": temp_path, "usage": u_data}
             except Exception as e:
                 logger.error(f"❌ Erro Step 2: {e}")
                 return {"error": str(e), "usage": {"input": 0, "output": 0}}
 
-# Funções de ponte fora da classe
+    def step3_generate_contextual_image(self, image_path: str, product_name: str) -> Dict[str, Any]:
+        """Gera imagem do produto num ambiente adequado (Ambientada)"""
+        from app.cloud import get_storage_client
+        logger.info(f"🖼️ Step 3: Gerando ambiente para {product_name}")
+
+        storage_client = get_storage_client()
+        try:
+            with PIL.Image.open(image_path).convert('RGB') as img:
+                img = self._resize_image(img, max_size=1024)
+                
+                # Prompt Profissional otimizado
+                prompt = (
+                    f"Professional commercial photography of {product_name}. "
+                    "Place the product in its natural, highly realistic usage environment (e.g., modern kitchen for food, elegant office for furniture). "
+                    "Ensure realistic cinematic lighting, accurate shadows, and correct scale. "
+                    "The product must be the central focus. High-end lifestyle magazine style. "
+                    "Output: Image data only."
+                )
+                
+                response = self.client.models.generate_content(
+                    model=self.model_image,
+                    contents=[prompt, img],
+                    config=types.GenerateContentConfig(safety_settings=self.safety_settings)
+                )
+                
+                usage = response.usage_metadata
+                u_data = {
+                    "input": int(usage.prompt_token_count or 0), 
+                    "output": int(usage.candidates_token_count or 0)
+                }
+
+                if not response.candidates or not response.candidates[0].content.parts:
+                    return {"error": "IA bloqueou a geração ambientada.", "usage": u_data}
+
+                image_part = next((p for p in response.candidates[0].content.parts if hasattr(p, 'inline_data') and p.inline_data), None)
+
+                if not image_part:
+                    return {"error": "A IA não retornou imagem para o ambiente.", "usage": u_data}
+
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
+                    tmp.write(image_part.inline_data.data)
+                    temp_path = tmp.name
+
+                filename = f"sams_contextual_{datetime.now().strftime('%H%M%S')}.png"
+                public_url = storage_client.upload_image(temp_path, filename)
+                os.remove(temp_path)
+
+                return {"public_urls": [public_url], "usage": u_data}
+        except Exception as e:
+            logger.error(f"❌ Erro Step 3: {e}")
+            return {"error": str(e), "usage": {"input": 0, "output": 0}}
+
+# Funções de ponte fora da classe preservadas
 def send_to_gemini(image_paths: List[str], extract_infos: bool = True):
     return GeminiClient().step1_extract_product_data(image_paths, extract_infos)
 
