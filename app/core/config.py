@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     GCP_SERVICE_ACCOUNT_SECRET_NAME: str = os.getenv("GCP_SERVICE_ACCOUNT_SECRET_NAME", "bd-image-parser-sa-key")
     GCP_USE_SECRET_MANAGER: bool = os.getenv("GCP_USE_SECRET_MANAGER", "false").lower() == "true"
     
+    # Mercado Livre
+    ML_CLIENT_ID: str = os.getenv("ML_CLIENT_ID")
+    ML_CLIENT_SECRET: str = os.getenv("ML_CLIENT_SECRET")
+    
     # --- SEGURANÇA E BANCO DE DADOS ---
     DB_PASSWORD: str = ""
     # CHAVE SECRETA PARA O JWT (ADICIONADA AQUI)

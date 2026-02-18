@@ -12,12 +12,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 
+# IMPORTAÇÕES DO BANCO PARA CRIAÇÃO DE TABELAS
+from app.core.database import engine, Base
+import app.models.entities as entities # Garante que os modelos sejam carregados
+
 from app.api import auth_router, main_router
 from app.api.routes.web import router as web_router
 from app.services.sams_club.api.routes import router as sams_club_router
 from app.services.leroy_merlin.api.routes import router as leroy_merlin_router
 from app.services.sodimac.api.routes import router as sodimac_router
 from app.api.dashboard import router as dashboard_router
+from app.services.mercado_livre.api.routes import router as ml_webhook_router
 
 # Configure logging
 logging.basicConfig(
@@ -28,6 +33,14 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# --- CRIAÇÃO AUTOMÁTICA DE TABELAS ---
+# Este comando percorre o arquivo entities.py e cria o que faltar no banco
+try:
+    Base.metadata.create_all(bind=engine)
+    logger.info("✅ Tabelas do banco de dados verificadas/criadas com sucesso.")
+except Exception as e:
+    logger.error(f"❌ Erro ao criar tabelas no banco: {e}")
 
 # --- AJUSTE PARA PRODUÇÃO: CRIAÇÃO DE DIRETÓRIOS ---
 for directory in [settings.STATIC_DIR, settings.EXPORTS_DIR]:
@@ -60,6 +73,7 @@ app.include_router(dashboard_router, tags=["Dashboard"])
 app.include_router(sams_club_router, tags=["Sam's Club"])
 app.include_router(leroy_merlin_router, tags=["Leroy Merlin"])
 app.include_router(sodimac_router, tags=["Sodimac"])
+app.include_router(ml_webhook_router, tags=["Mercado Livre Webhook"])
 app.include_router(web_router, tags=["Web"])
 
 # Mount static files
