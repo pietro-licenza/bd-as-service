@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.entities import Order, MLCredential, User
 from app.api.auth import get_current_user
-# Importe sua função de obter usuário atual (ajuste o caminho se necessário)
-# from app.api.auth import get_current_user 
+from app.services.mercado_livre.utils import get_valid_access_token
+
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/webhooks/mercadolivre", tags=["Mercado Livre Webhook"])
