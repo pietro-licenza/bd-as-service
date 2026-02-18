@@ -26,7 +26,7 @@ async def ml_webhook_receiver(request: Request, db: Session = Depends(get_db)):
 
         logger.info(f"🔔 Notificação: Loja {ml_user_id} | Tópico {topic}")
 
-        if topic == "orders":
+        if topic in ["orders", "orders_v2"]:
             # 1. Obtém slug da organização dona desta conta ML
             creds = db.query(MLCredential).filter(MLCredential.seller_id == ml_user_id).first()
             store_slug = creds.store_slug if creds else "desconhecido"
