@@ -3,6 +3,7 @@ API routes for Sodimac product processing service with cost tracking.
 Versão Final: Integração total com Supabase, Segurança e Relatório Excel.
 """
 import logging
+import re  # Importado para o tratamento das URLs de imagem
 from typing import List
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
@@ -73,6 +74,17 @@ async def process_product_urls(
             total_cost_batch_brl += item_cost
             total_tokens_batch += (usage["input"] + usage["output"])
 
+            # --- TRATAMENTO DE IMAGENS HD (REPLICANDO LÓGICA DO FRONTEND) ---
+            # Removemos os parâmetros extras (após a vírgula) e forçamos o w=1036
+            raw_images = product_info.get("image_urls", [])
+            hd_images = []
+            for img_url in raw_images:
+                # 1. Pega apenas a parte antes da primeira vírgula (remove h=, e=, f=, etc)
+                clean_url = img_url.split(',')[0].strip()
+                # 2. Se a largura for 76 ou 120 (miniaturas), substitui pela HD (1036)
+                clean_url = re.sub(r'w=(76|120)', 'w=1036', clean_url)
+                hd_images.append(clean_url)
+
             # Passo 4: Montagem do Objeto de Resposta
             product_response = ProductData(
                 titulo=titulo,
@@ -80,14 +92,15 @@ async def process_product_urls(
                 marca=product_info.get("marca", ""),
                 ean=product_info.get("ean", ""),
                 descricao=descricao,
-                image_urls=product_info.get("image_urls", []),
+                image_urls=hd_images, # Utilizamos as imagens já tratadas para HD
                 url_original=url,
                 input_tokens=usage["input"],
                 output_tokens=usage["output"],
                 input_cost_brl=c_in,
                 output_cost_brl=c_out,
                 total_cost_brl=item_cost,
-                error=None if product_info.get("success") else product_info.get("error")
+                # Corrigido o check de erro para ser mais preciso
+                error=product_info.get("error") if product_info.get("error") else None
             )
             
             all_products.append(product_response)
@@ -102,11 +115,11 @@ async def process_product_urls(
                 error=str(e)
             ))
 
-    # --- NOVO: SALVAR LOG NO SUPABASE ---
+    # --- SALVAR LOG NO SUPABASE ---
     if all_products:
         try:
             log_entry = ScrapingLog(
-                user_id=current_user.id, # ID do Victor ou Admin
+                user_id=current_user.id,
                 loja="sodimac",
                 url_count=len(request.urls),
                 total_tokens=total_tokens_batch,
