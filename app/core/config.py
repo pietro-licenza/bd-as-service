@@ -4,6 +4,7 @@ Core configuration for BD | AS Platform
 import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
+from typing import Optional
 
 class Settings(BaseSettings):
     """Application settings"""
@@ -24,14 +25,10 @@ class Settings(BaseSettings):
     PORT: int = 8000
     
     # CORS
-    CORS_ORIGINS: list = ["http://localhost:8000", "http://127.0.0.1:8000", "*"]
+    CORS_ORIGINS: list = ["*"]
     CORS_ALLOW_CREDENTIALS: bool = True
     CORS_ALLOW_METHODS: list = ["*"]
     CORS_ALLOW_HEADERS: list = ["*"]
-    
-    # Google Cloud
-    GOOGLE_CLOUD_PROJECT: str = os.getenv("GOOGLE_CLOUD_PROJECT", "")
-    GCS_BUCKET_NAME: str = os.getenv("GCS_BUCKET_NAME", "")
     
     # Gemini API
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "AIzaSyCtBzhyDgY-l8pTqTm2FURrZVsdjQyd5BA")
@@ -48,18 +45,17 @@ class Settings(BaseSettings):
     GCP_SERVICE_ACCOUNT_SECRET_NAME: str = os.getenv("GCP_SERVICE_ACCOUNT_SECRET_NAME", "bd-image-parser-sa-key")
     GCP_USE_SECRET_MANAGER: bool = os.getenv("GCP_USE_SECRET_MANAGER", "false").lower() == "true"
     
-    # Mercado Livre
-    ML_CLIENT_ID: str = os.getenv("ML_CLIENT_ID")
-    ML_CLIENT_SECRET: str = os.getenv("ML_CLIENT_SECRET")
+    # Mercado Livre (Vindo apenas das variáveis de ambiente)
+    ML_CLIENT_ID: Optional[str] = os.getenv("ML_CLIENT_ID")
+    ML_CLIENT_SECRET: Optional[str] = os.getenv("ML_CLIENT_SECRET")
     
     # --- SEGURANÇA E BANCO DE DADOS ---
-    DB_PASSWORD: str = ""
-    # CHAVE SECRETA PARA O JWT (ADICIONADA AQUI)
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "")
     SECRET_KEY: str = os.getenv("SECRET_KEY", "uma_chave_muito_secreta_e_longa_para_seguranca")
 
     class Config:
         case_sensitive = True
         env_file = ".env"
-        extra = "ignore" # Ignora variáveis extras no .env
+        extra = "ignore"
 
 settings = Settings()
