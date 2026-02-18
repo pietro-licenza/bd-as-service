@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     # --- SEGURANÇA E BANCO DE DADOS ---
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", "")
     SECRET_KEY: str = os.getenv("SECRET_KEY", "uma_chave_muito_secreta_e_longa_para_seguranca")
+    # LINHA ADICIONADA ABAIXO:
+    ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
 
     class Config:
         case_sensitive = True

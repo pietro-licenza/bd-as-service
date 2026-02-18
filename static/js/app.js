@@ -41,13 +41,6 @@ const HomeTemplate = () => `
     </div>
 `;
 
-const OutrasTemplate = () => `
-    <div style="text-align: center; padding: 4rem 2rem;">
-        <h1 style="font-size: 2rem; color: var(--text-primary); margin-bottom: 1rem;">📦 Outras Integrações</h1>
-        <p style="font-size: 1.125rem; color: var(--text-secondary);">Em breve, novas integrações estarão disponíveis aqui.</p>
-    </div>
-`;
-
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
     // Proteção global: se não estiver logado, redireciona para /login
@@ -68,6 +61,12 @@ document.addEventListener('DOMContentLoaded', () => {
         title: 'AI - Custos',
         render: DashboardTemplate,
         onMount: initDashboardPage
+    });
+
+    router.addRoute('/dashboard/vendas', {
+        title: 'Painel de Vendas',
+        render: VendasTemplate,      
+        onMount: initVendasPage      
     });
 
     router.addRoute('/integracoes/sams', {

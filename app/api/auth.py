@@ -1,14 +1,19 @@
 # app/api/auth.py
 from fastapi import APIRouter, Depends, HTTPException, status, Response
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from datetime import timedelta
+from jose import JWTError, jwt  # Necessário para decodificar o token
 
 from app.core.auth import authenticate_user, create_access_token
 from app.core.database import get_db
 from app.core.config import settings
+from app.models.entities import User  # Importado para buscar o usuário no banco
 
 router = APIRouter()
+
+# Define onde o FastAPI deve procurar o token (no header Authorization: Bearer ...)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 
 @router.post("/login")
 async def login(
@@ -16,7 +21,7 @@ async def login(
     form_data: OAuth2PasswordRequestForm = Depends(), 
     db: Session = Depends(get_db)
 ):
-    # Tenta autenticar no Supabase
+    # Tenta autenticar no banco de dados local
     user = await authenticate_user(db, form_data.username, form_data.password)
     
     if not user:
@@ -39,7 +44,7 @@ async def login(
         httponly=True,
         max_age=60 * 60 * 24, # 1 dia
         samesite="lax",
-        secure=False # Em produção (HTTPS) deve ser True
+        secure=False 
     )
     
     return {
@@ -47,3 +52,42 @@ async def login(
         "token_type": "bearer", 
         "user": {"username": user.username, "name": user.name}
     }
+
+# --- FUNÇÃO ADICIONADA PARA RESOLVER O ERRO DE IMPORTAÇÃO E FILTRAR VENDAS ---
+
+async def get_current_user(
+    db: Session = Depends(get_db), 
+    token: str = Depends(oauth2_scheme)
+) -> User:
+    """
+    Dependência que valida o JWT e retorna o objeto do usuário logado.
+    Isso permite que a rota de ordens saiba se o Igor ou o Victor está acessando.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token de acesso inválido ou expirado",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        # Decodifica o token usando as chaves configuradas no app
+        payload = jwt.decode(
+            token, 
+            settings.SECRET_KEY, 
+            algorithms=[settings.ALGORITHM]
+        )
+        username: str = payload.get("sub")
+        
+        if username is None:
+            raise credentials_exception
+            
+    except JWTError:
+        raise credentials_exception
+        
+    # Busca o usuário no banco de dados para acessar o campo 'loja_permissao'
+    user = db.query(User).filter(User.username == username).first()
+    
+    if user is None:
+        raise credentials_exception
+        
+    return user

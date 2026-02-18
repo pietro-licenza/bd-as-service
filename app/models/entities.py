@@ -22,17 +22,6 @@ class ScrapingLog(Base):
     total_cost_brl = Column(Float)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class MercadoLivreOrder(Base):
-    """Nova tabela para armazenar notificações de vendas do Mercado Livre"""
-    __tablename__ = "mercadolivre_orders"
-    id = Column(Integer, primary_key=True, index=True)
-    seller_id = Column(String, index=True) # ID da loja vindo do ML
-    resource_id = Column(String, unique=True, index=True) # ID da Ordem no ML
-    topic = Column(String) # orders, items, etc.
-    raw_data = Column(JSON) # Payload completo do webhook
-    status = Column(String, default="received")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
 class MLCredential(Base):
     """Tabela para gerenciar o OAuth 2.0 da sua loja"""
     __tablename__ = "ml_credentials"
@@ -41,5 +30,19 @@ class MLCredential(Base):
     store_name = Column(String)
     access_token = Column(String)
     refresh_token = Column(String)
+    store_slug = Column(String, index=True)
     expires_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    marketplace = Column(String, index=True) # Identifica a origem: 'mercadolivre', 'shopee', etc.
+    external_id = Column(String, index=True, unique=True) # ID da ordem no Marketplace
+    seller_id = Column(String, index=True)
+    total_amount = Column(Float)
+    status = Column(String)
+    raw_data = Column(JSON) # JSON completo enviado pela API original
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    store_slug = Column(String, index=True)

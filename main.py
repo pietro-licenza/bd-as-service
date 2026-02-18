@@ -14,7 +14,8 @@ from app.core.config import settings
 
 # IMPORTAÇÕES DO BANCO PARA CRIAÇÃO DE TABELAS
 from app.core.database import engine, Base
-import app.models.entities as entities # Garante que os modelos sejam carregados
+# Importar entities garante que o SQLAlchemy "enxergue" a classe Order e MLCredential
+from app.models import entities 
 
 from app.api import auth_router, main_router
 from app.api.routes.web import router as web_router
@@ -35,18 +36,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- CRIAÇÃO AUTOMÁTICA DE TABELAS ---
-# Este comando percorre o arquivo entities.py e cria o que faltar no banco
+# O SQLAlchemy percorre os modelos carregados e cria as tabelas unificadas
 try:
     Base.metadata.create_all(bind=engine)
-    logger.info("✅ Tabelas do banco de dados verificadas/criadas com sucesso.")
+    logger.info("✅ Tabelas unificadas (incluindo 'orders') verificadas no banco.")
 except Exception as e:
-    logger.error(f"❌ Erro ao criar tabelas no banco: {e}")
+    logger.error(f"❌ Erro ao sincronizar tabelas: {e}")
 
-# --- AJUSTE PARA PRODUÇÃO: CRIAÇÃO DE DIRETÓRIOS ---
+# --- CRIAÇÃO DE DIRETÓRIOS ---
 for directory in [settings.STATIC_DIR, settings.EXPORTS_DIR]:
     if not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
-        logger.info(f"📁 Pasta criada: {directory}")
+        logger.info(f"📁 Pasta garantida: {directory}")
 
 # Initialize FastAPI application
 app = FastAPI(
@@ -54,8 +55,6 @@ app = FastAPI(
     description="Plataforma de Integração e Automação - BD | AS",
     version="2.0.0"
 )
-
-logger.info(f"🚀 Iniciando {settings.APP_NAME} v2.0.0")
 
 # CORS Configuration
 app.add_middleware(
@@ -78,8 +77,6 @@ app.include_router(web_router, tags=["Web"])
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(settings.STATIC_DIR)), name="static")
-
-# Mount exports directory
 app.mount("/exports", StaticFiles(directory=str(settings.EXPORTS_DIR)), name="exports")
 
 if __name__ == "__main__":
