@@ -24,10 +24,15 @@ from app.models.entities import ScrapingLog
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/sams-club", tags=["Sam's Club"])
 
-# Constantes Oficiais para o Faturamento
-COST_INPUT_USD = 0.075
-COST_OUTPUT_USD = 0.30
-USD_TO_BRL = 5.10 
+# --- CONFIGURAÇÃO DE CUSTO REAL POR TOKEN (GEMINI 1.5 FLASH / LITE) ---
+#
+USD_TO_BRL = 5.10             # Câmbio comercial para conversão
+PRICE_INPUT_1M_USD = 0.075     # Preço por 1M de tokens de entrada
+PRICE_OUTPUT_1M_USD = 0.30     # Preço por 1M de tokens de saída
+
+# Cálculo do preço unitário por token em Reais
+TOKEN_IN_PRICE = (PRICE_INPUT_1M_USD / 1_000_000) * USD_TO_BRL
+TOKEN_OUT_PRICE = (PRICE_OUTPUT_1M_USD / 1_000_000) * USD_TO_BRL
 
 @router.post("/process-batch/", response_model=BatchResponse)
 async def process_batch(
@@ -37,7 +42,8 @@ async def process_batch(
     db: Session = Depends(get_db)
 ) -> BatchResponse:
     """
-    Processa lote Sam's Club: Step 1 (Dados), Step 2 (Fundo Branco), Step 3 (Ambientada).
+    Processa lote Sam's Club com captura de Usage Metadata real da Google.
+    Cálculo 100% baseado em tokens reportados pela API.
     """
     logger.info(f"🚀 Lote Sam's Club recebido de {user.username}")
     
@@ -71,60 +77,55 @@ async def process_batch(
             remove_bg = form.get(f'remove_background_{i}') == 'true'
             generate_contextual = form.get(f'generate_contextual_{i}') == 'true'
 
-            # --- Passo 1: Extração de Dados ---
+            # 1. Extração de Dados (Captura tokens reais de entrada/saída)
             result = gemini_client.step1_extract_product_data(temp_paths)
             u1 = result.get("usage", {"input": 0, "output": 0})
-            err_msg = result.get("error")
             infos = result.get("infos_extraidas", {})
             p_name = infos.get("nome", "produto")
 
             gen_urls = []
-            u2 = {"input": 0, "output": 0}
-            u3 = {"input": 0, "output": 0}
+            u2, u3 = {"input": 0, "output": 0}, {"input": 0, "output": 0}
             local_clean_path = None
 
-            # --- Passo 2: Remoção de Fundo ---
-            if remove_bg and not err_msg:
-                idx_ia = int(infos.get("foto_ideal_index", 1))
-                idx = (idx_ia - 1) if idx_ia > 0 else 0
+            # 2. Remoção de Fundo (Captura tokens reais)
+            if remove_bg and not result.get("error"):
+                idx = int(infos.get("foto_ideal_index", 1)) - 1
                 if 0 <= idx < len(temp_paths):
                     gen_res = gemini_client.step2_generate_background_removed_image(temp_paths[idx])
                     if gen_res.get("public_urls"):
                         gen_urls.extend(gen_res["public_urls"])
                         local_clean_path = gen_res.get("local_path")
                     u2 = gen_res.get("usage", {"input": 0, "output": 0})
-                    if gen_res.get("error"): err_msg = gen_res.get("error")
 
-            # --- Passo 3: Geração Ambientada (Novo) ---
-            if generate_contextual and not err_msg:
-                # Usa a imagem limpa do step 2 se existir, senão usa a original eleita
-                source_img = local_clean_path if local_clean_path else temp_paths[idx]
+            # 3. Geração Ambientada (Captura tokens reais)
+            if generate_contextual and not result.get("error"):
+                source_img = local_clean_path if local_clean_path else temp_paths[0]
                 ctx_res = gemini_client.step3_generate_contextual_image(source_img, p_name)
                 if ctx_res.get("public_urls"):
                     gen_urls.extend(ctx_res["public_urls"])
                 u3 = ctx_res.get("usage", {"input": 0, "output": 0})
-                if ctx_res.get("error"): err_msg = ctx_res.get("error")
 
-            # Cálculo Financeiro 360
-            t_in = (u1.get("input") or 0) + (u2.get("input") or 0) + (u3.get("input") or 0)
-            t_out = (u1.get("output") or 0) + (u2.get("output") or 0) + (u3.get("output") or 0)
+            # --- CÁLCULO FINANCEIRO BASEADO EXCLUSIVAMENTE NA API ---
+            # Somamos todos os tokens de entrada e saída das 3 etapas
+            t_in = u1["input"] + u2["input"] + u3["input"]
+            t_out = u1["output"] + u2["output"] + u3["output"]
             
-            c_in = (t_in / 1_000_000) * COST_INPUT_USD * USD_TO_BRL
-            c_out = (t_out / 1_000_000) * COST_OUTPUT_USD * USD_TO_BRL
+            # Custo matemático puro
+            c_in = t_in * TOKEN_IN_PRICE
+            c_out = t_out * TOKEN_OUT_PRICE
             item_cost = c_in + c_out
 
             total_batch_tokens += (t_in + t_out)
             total_batch_cost_brl += item_cost
 
-            # Limpeza do path temporário do Step 2
             if local_clean_path and os.path.exists(local_clean_path):
                 os.remove(local_clean_path)
 
             product_response = BatchProductResponse(
                 product_id=product_id, num_images=len(product_files),
-                filenames=[f.filename for f in product_files], prompt="Análise e Ambientação",
+                filenames=[f.filename for f in product_files], prompt="Análise e Geração",
                 gemini_response=result.get("gemini_response", "{}"),
-                generated_images_urls=gen_urls, error=err_msg,
+                generated_images_urls=gen_urls, error=result.get("error"),
                 input_tokens=int(t_in), input_cost_brl=round(c_in, 6),
                 output_tokens=int(t_out), output_cost_brl=round(c_out, 6),
                 total_cost_brl=round(item_cost, 6)
@@ -145,6 +146,6 @@ async def process_batch(
             db.commit()
         except Exception as db_err:
             db.rollback()
-            logger.error(f"❌ Erro log: {db_err}")
+            logger.error(f"❌ Erro log Sam's: {db_err}")
 
     return BatchResponse(products=all_products, total_products=len(all_products))

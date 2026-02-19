@@ -15,10 +15,15 @@ from app.models.entities import ScrapingLog
 
 logger = logging.getLogger(__name__)
 
-# Configurações Financeiras
-COST_INPUT_USD = 0.075 / 1_000_000
-COST_OUTPUT_USD = 0.30 / 1_000_000
-USD_TO_BRL = 5.10 
+# --- CONFIGURAÇÃO DE CUSTO REAL POR TOKEN (GEMINI 2.0 FLASH) ---
+#
+USD_TO_BRL = 5.10             # Câmbio base para conversão
+PRICE_INPUT_1M_USD = 0.10     # Preço por 1M de tokens de entrada
+PRICE_OUTPUT_1M_USD = 0.40    # Preço por 1M de tokens de saída
+
+# Cálculo do preço unitário por token em Reais
+TOKEN_IN_PRICE = (PRICE_INPUT_1M_USD / 1_000_000) * USD_TO_BRL
+TOKEN_OUT_PRICE = (PRICE_OUTPUT_1M_USD / 1_000_000) * USD_TO_BRL
 
 router = APIRouter(prefix="/api/leroy-merlin", tags=["Leroy Merlin"])
 
@@ -28,6 +33,10 @@ async def process_product_urls(
     user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> BatchResponse:
+    """
+    Processa URLs da Leroy Merlin com captura de tokens reais e cálculo financeiro 
+    baseado estritamente nos dados fornecidos pela API do Google.
+    """
     logger.info(f"🚀 Lote Leroy Merlin: {len(request.urls)} URLs para {user.username}")
     
     gemini_client = get_gemini_client()
@@ -38,16 +47,20 @@ async def process_product_urls(
 
     for url in request.urls:
         try:
+            # Passo 1: Extração de dados brutos da URL (Custo zero de IA aqui)
             p_info = extract_product_data(url)
             titulo = p_info.get("titulo", "Produto sem título")
             
+            # Passo 2: Chamada ao Gemini (Captura tokens reais da resposta)
             gemini_res = gemini_client.extract_description_from_url(url, titulo)
             usage = gemini_res.get("usage", {"input": 0, "output": 0})
             
-            # Cálculos
-            c_in = usage["input"] * COST_INPUT_USD * USD_TO_BRL
-            c_out = usage["output"] * COST_OUTPUT_USD * USD_TO_BRL
+            # --- CÁLCULO FINANCEIRO BASEADO EM TOKENS REAIS ---
+            # 1. Custo dos Tokens reportados pela API
+            c_in = usage["input"] * TOKEN_IN_PRICE
+            c_out = usage["output"] * TOKEN_OUT_PRICE
             item_cost = c_in + c_out
+            
             total_batch_cost_brl += item_cost
             total_batch_tokens += (usage["input"] + usage["output"])
 
@@ -61,9 +74,9 @@ async def process_product_urls(
                 url_original=url,
                 input_tokens=usage["input"],
                 output_tokens=usage["output"],
-                input_cost_brl=c_in,
-                output_cost_brl=c_out,
-                total_cost_brl=item_cost
+                input_cost_brl=round(c_in, 6),
+                output_cost_brl=round(c_out, 6),
+                total_cost_brl=round(item_cost, 6)
             )
             
             all_products.append(p_obj)
@@ -75,15 +88,19 @@ async def process_product_urls(
 
     # --- SALVAR LOG NO SUPABASE ---
     if all_products:
-        log_entry = ScrapingLog(
-            user_id=user.id,
-            loja="leroy_merlin",
-            url_count=len(request.urls),
-            total_tokens=total_batch_tokens,
-            total_cost_brl=total_batch_cost_brl
-        )
-        db.add(log_entry)
-        db.commit()
+        try:
+            log_entry = ScrapingLog(
+                user_id=user.id,
+                loja="leroy_merlin",
+                url_count=len(request.urls),
+                total_tokens=total_batch_tokens,
+                total_cost_brl=total_batch_cost_brl
+            )
+            db.add(log_entry)
+            db.commit()
+        except Exception as db_err:
+            db.rollback()
+            logger.error(f"❌ Erro log Leroy: {db_err}")
 
     # Geração do Excel
     excel_url = None

@@ -23,10 +23,11 @@ from app.shared.excel_generator import generate_standard_excel
 
 logger = logging.getLogger(__name__)
 
-# Configurações de Custo (Gemini 1.5 Flash / Flash-Lite)
-COST_INPUT_USD = 0.075 / 1_000_000
-COST_OUTPUT_USD = 0.30 / 1_000_000
+# --- PREÇO REAL POR TOKEN (GOOGLE GEMINI 2.0 FLASH) ---
+#
 USD_TO_BRL = 5.10 
+PRICE_IN = (0.10 / 1_000_000) * USD_TO_BRL  # Entrada: $0.10 por 1M
+PRICE_OUT = (0.40 / 1_000_000) * USD_TO_BRL # Saída: $0.40 por 1M
 
 router = APIRouter(prefix="/api/sodimac", tags=["Sodimac"])
 
@@ -38,7 +39,7 @@ async def process_product_urls(
 ) -> BatchResponse:
     """
     Processa URLs da Sodimac, gera descrições via IA, calcula investimento real
-    e salva o log de uso no Supabase.
+    com captura de tokens reais e salva o log de uso no Supabase.
     """
     logger.info(f"🚀 Iniciando lote Sodimac: {len(request.urls)} URLs para {current_user.username}")
     
@@ -55,33 +56,30 @@ async def process_product_urls(
         try:
             logger.info(f"📊 Processando {idx}/{len(request.urls)}: {url}")
 
-            # Passo 1: Extração HTML/Regex
+            # Passo 1: Extração HTML/Regex (Custo 0 de IA)
             product_info = extract_product_data(url)
             
-            # Passo 2: Gemini para Descrição e Captura de Tokens
+            # Passo 2: Gemini para Descrição e Captura de Tokens (REAIS)
             titulo = product_info.get("titulo", "Produto Sodimac")
             gemini_res = gemini_client.extract_description_from_url(url, titulo)
             
             descricao = gemini_res.get("descricao", "")
             usage = gemini_res.get("usage", {"input": 0, "output": 0})
             
-            # Passo 3: Cálculo Financeiro Detalhado
-            c_in = usage["input"] * COST_INPUT_USD * USD_TO_BRL
-            c_out = usage["output"] * COST_OUTPUT_USD * USD_TO_BRL
+            # Passo 3: Cálculo Financeiro 100% baseado nos campos fornecidos pela API
+            c_in = usage["input"] * PRICE_IN
+            c_out = usage["output"] * PRICE_OUT
             item_cost = c_in + c_out
             
             # Acumuladores para o Log
             total_cost_batch_brl += item_cost
             total_tokens_batch += (usage["input"] + usage["output"])
 
-            # --- TRATAMENTO DE IMAGENS HD (REPLICANDO LÓGICA DO FRONTEND) ---
-            # Removemos os parâmetros extras (após a vírgula) e forçamos o w=1036
+            # --- TRATAMENTO DE IMAGENS HD ---
             raw_images = product_info.get("image_urls", [])
             hd_images = []
             for img_url in raw_images:
-                # 1. Pega apenas a parte antes da primeira vírgula (remove h=, e=, f=, etc)
                 clean_url = img_url.split(',')[0].strip()
-                # 2. Se a largura for 76 ou 120 (miniaturas), substitui pela HD (1036)
                 clean_url = re.sub(r'w=(76|120)', 'w=1036', clean_url)
                 hd_images.append(clean_url)
 
@@ -92,14 +90,13 @@ async def process_product_urls(
                 marca=product_info.get("marca", ""),
                 ean=product_info.get("ean", ""),
                 descricao=descricao,
-                image_urls=hd_images, # Utilizamos as imagens já tratadas para HD
+                image_urls=hd_images,
                 url_original=url,
                 input_tokens=usage["input"],
                 output_tokens=usage["output"],
-                input_cost_brl=c_in,
-                output_cost_brl=c_out,
-                total_cost_brl=item_cost,
-                # Corrigido o check de erro para ser mais preciso
+                input_cost_brl=round(c_in, 6),
+                output_cost_brl=round(c_out, 6),
+                total_cost_brl=round(item_cost, 6),
                 error=product_info.get("error") if product_info.get("error") else None
             )
             
@@ -127,7 +124,6 @@ async def process_product_urls(
             )
             db.add(log_entry)
             db.commit()
-            logger.info(f"📊 Log Sodimac salvo no Supabase para {current_user.username}")
         except Exception as db_err:
             db.rollback()
             logger.error(f"❌ Falha ao salvar log no banco: {db_err}")
@@ -138,21 +134,11 @@ async def process_product_urls(
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             excel_filename = f"sodimac_produtos_{timestamp}.xlsx"
-            
-            generate_standard_excel(
-                products_data=excel_data,
-                filename=excel_filename,
-                exports_dir=settings.EXPORTS_DIR,
-                service_name="Sodimac",
-                header_color="FF6B35"  # Laranja Sodimac
-            )
+            generate_standard_excel(excel_data, excel_filename, settings.EXPORTS_DIR, "Sodimac", "FF6B35")
             excel_url = f"/exports/{excel_filename}"
-            logger.info(f"✅ Excel gerado com sucesso: {excel_url}")
         except Exception as e:
-            logger.error(f"❌ Erro ao gerar Excel Sodimac: {str(e)}")
+            logger.error(f"❌ Erro Excel Sodimac: {str(e)}")
 
-    logger.info(f"✅ Lote Sodimac finalizado. Investimento Total: R$ {total_cost_batch_brl:.4f}")
-    
     return BatchResponse(
         products=all_products,
         total_products=len(all_products),
