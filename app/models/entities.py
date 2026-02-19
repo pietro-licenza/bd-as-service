@@ -46,3 +46,14 @@ class Order(Base):
     raw_data = Column(JSON) # JSON completo enviado pela API original
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     store_slug = Column(String, index=True)
+
+class MagaluCredential(Base):
+    """Tabela para gerenciar o OAuth 2.0 da sua loja Magalu"""
+    __tablename__ = "magalu_credentials"
+    id = Column(Integer, primary_key=True, index=True)
+    seller_id = Column(String, unique=True, index=True) # ID do Seller no Magalu
+    access_token = Column(String)
+    refresh_token = Column(String)
+    store_slug = Column(String, index=True) # Vínculo com a organização (ex: brazil_direct)
+    expires_at = Column(DateTime(timezone=True))
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

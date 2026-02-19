@@ -33,9 +33,12 @@ async def login(
     
     # Cria o Token com validade de 24 horas
     access_token = create_access_token(
-        data={"sub": user.username},
+        data={
+            "sub": user.username,
+            "loja_permissao": user.loja_permissao 
+        },
         expires_delta=timedelta(minutes=60 * 24)
-    )
+        )
     
     # Define o Cookie para o navegador manter a sessão
     response.set_cookie(
@@ -50,7 +53,7 @@ async def login(
     return {
         "access_token": access_token, 
         "token_type": "bearer", 
-        "user": {"username": user.username, "name": user.name}
+        "user": {"username": user.username, "name": user.name, "loja_permissao": user.loja_permissao}
     }
 
 # --- FUNÇÃO ADICIONADA PARA RESOLVER O ERRO DE IMPORTAÇÃO E FILTRAR VENDAS ---
