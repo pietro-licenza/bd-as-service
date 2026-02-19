@@ -12,39 +12,48 @@ router = APIRouter(prefix="/api/webhooks/magalu", tags=["Magalu Webhook"])
 @router.post("/notifications")
 async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db)):
     """
-    Recebe notificações de vendas do Magalu, valida o Challenge (Onboarding)
+    Recebe notificações do Magalu, filtra apenas eventos de pedidos
     e salva na tabela unificada 'orders'.
     """
     try:
         payload = await request.json()
         
-        # --- BLOCO DE VALIDAÇÃO (CHALLENGE) ---
-        # O Magalu envia um 'challenge' no momento do Signup para validar sua URL.
-        # Você PRECISA devolver o mesmo valor para o cadastro ser concluído.
+        # 1. BLOCO DE VALIDAÇÃO (CHALLENGE)
         if "challenge" in payload:
             challenge_val = payload.get("challenge")
             logger.info(f"🛡️ Validando Challenge Magalu: {challenge_val}")
             return {"challenge": challenge_val}
-        # --------------------------------------
 
-        # Se não for um challenge, processamos como uma venda normal
+        # 2. IDENTIFICAÇÃO DO TÓPICO
+        # O Magalu envia o nome do evento no campo 'topic' ou 'event'
+        topic = payload.get("topic") or payload.get("event")
+        logger.info(f"🔔 Notificação Magalu recebida. Tópico: {topic}")
+
+        # 3. FILTRO DE EVENTOS DE PEDIDO
+        # Lista de tópicos que queremos processar (conforme o retorno do seu Postman)
+        order_topics = ["created_order", "orders_order", "orders_delivery"]
+        
+        if topic not in order_topics:
+            logger.info(f"⏩ Ignorando tópico não relacionado a pedidos: {topic}")
+            return {"status": "ignored", "message": "Evento não processado"}
+
+        # 4. PROCESSAMENTO DO PEDIDO
+        # Se chegou aqui, é um pedido real.
         order_details = payload
         
-        # O Magalu identifica a ordem pelo 'id' ou 'order_id'
         external_id = str(order_details.get("id") or order_details.get("order_id"))
-        # Captura o seller_id do payload enviado pelo Magalu
         seller_id = str(order_details.get("seller_id", "desconhecido"))
 
-        logger.info(f"📦 Nova Notificação Magalu: Pedido #{external_id}")
+        logger.info(f"📦 Processando Pedido Magalu: #{external_id}")
 
-        # 1. Tenta encontrar a organização vinculada no nosso banco
+        # Tenta encontrar a organização vinculada
         creds = db.query(MagaluCredential).filter(MagaluCredential.seller_id == seller_id).first()
         store_slug = creds.store_slug if creds else "magalu_vendas"
 
-        # 2. Mapeamento de Status
-        magalu_status = order_details.get("status", "NEW").lower()
+        # Mapeamento de Status
+        magalu_status = str(order_details.get("status", "NEW")).lower()
         
-        # 3. Lógica de Upsert
+        # Lógica de Upsert (Atualiza se existir, cria se não)
         existing_order = db.query(Order).filter(
             Order.external_id == external_id, 
             Order.marketplace == "magalu"
@@ -56,7 +65,7 @@ async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db
             existing_order.status = "paid" if magalu_status == "approved" else magalu_status
             existing_order.total_amount = total_amount
             existing_order.raw_data = order_details
-            logger.info(f"🔄 Venda {external_id} atualizada para status: {existing_order.status}")
+            logger.info(f"🔄 Venda {external_id} atualizada para: {existing_order.status}")
         else:
             new_order = Order(
                 marketplace="magalu",
@@ -76,8 +85,9 @@ async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db
     except Exception as e:
         db.rollback()
         logger.error(f"❌ Erro ao processar Webhook Magalu: {str(e)}")
+        # Retornamos 200 mesmo no erro para evitar que o Magalu tente reenviar 
+        # infinitamente notificações problemáticas
         return {"status": "error", "message": str(e)}
-
 @router.get("/test-auth/{seller_id}")
 async def test_magalu_auth(seller_id: str, db: Session = Depends(get_db)):
     """Valida se as chaves e a renovação de token estão funcionando"""
