@@ -55,10 +55,11 @@ class ProductPromptRequest(BaseModel):
     """Request for a single product with images and prompt."""
     product_id: str = Field(..., description="Product identifier in the batch")
     prompt: str = Field(..., description="Prompt livre para o produto")
-    # Aqui pode ser uma lista de nomes de arquivos, ou base64, ou URLs temporários
     filenames: List[str] = Field(..., description="List of filenames")
 
+
 class BatchProductResponse(BaseModel):
+    """Response for a single product in batch processing with cost tracking."""
     product_id: str
     num_images: int
     filenames: List[str]
@@ -67,35 +68,23 @@ class BatchProductResponse(BaseModel):
     generated_images_urls: List[str] = Field(default_factory=list)
     error: Optional[str] = None
     
-    # CAMPOS ESSENCIAIS PARA O CUSTO APARECER NO JS
-    input_tokens: int = 0
-    input_cost_brl: float = 0.0
-    output_tokens: int = 0
-    output_cost_brl: float = 0.0
-    total_cost_brl: float = 0.0
+    # Campos para rastreamento de custos e tokens no Frontend
+    input_tokens: int = Field(default=0, description="Total de tokens de entrada")
+    input_cost_brl: float = Field(default=0.0, description="Custo de entrada em R$")
+    output_tokens: int = Field(default=0, description="Total de tokens de saída")
+    output_cost_brl: float = Field(default=0.0, description="Custo de saída em R$")
+    total_cost_brl: float = Field(default=0.0, description="Custo total do produto em R$")
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class BatchResponse(BaseModel):
+    """Response for batch processing results."""
     products: List[BatchProductResponse]
     total_products: int
     excel_download_url: Optional[str] = None
-    model_config = ConfigDict(from_attributes=True)
-
-class BatchProductResponse(BaseModel):
-    """Response for a single product in batch processing."""
-    product_id: str
-    num_images: int
-    filenames: List[str]
-    prompt: str
-    gemini_response: str
-    generated_images_urls: List[str] = Field(default_factory=list)
-    error: Optional[str] = None
     
-    # NOVAS COLUNAS PARA O FRONTEND
-    input_tokens: Optional[int] = 0
-    input_cost_brl: Optional[float] = 0.0
-    output_tokens: Optional[int] = 0
-    output_cost_brl: Optional[float] = 0.0
-    total_cost_brl: Optional[float] = 0.0
+    # Campo para o investimento total do lote
+    total_cost_batch_brl: float = Field(default=0.0, description="Custo total do lote em R$")
+    
+    model_config = ConfigDict(from_attributes=True)
