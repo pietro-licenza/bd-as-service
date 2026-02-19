@@ -12,31 +12,44 @@ router = APIRouter(prefix="/api/webhooks/magalu", tags=["Magalu Webhook"])
 @router.post("/notifications")
 async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db)):
     """
-    Recebe notificações de vendas do Magalu e salva na tabela unificada 'orders'.
+    Recebe notificações de vendas do Magalu, valida o Challenge (Onboarding)
+    e salva na tabela unificada 'orders'.
     """
     try:
-        order_details = await request.json()
+        payload = await request.json()
+        
+        # --- BLOCO DE VALIDAÇÃO (CHALLENGE) ---
+        # O Magalu envia um 'challenge' no momento do Signup para validar sua URL.
+        # Você PRECISA devolver o mesmo valor para o cadastro ser concluído.
+        if "challenge" in payload:
+            challenge_val = payload.get("challenge")
+            logger.info(f"🛡️ Validando Challenge Magalu: {challenge_val}")
+            return {"challenge": challenge_val}
+        # --------------------------------------
+
+        # Se não for um challenge, processamos como uma venda normal
+        order_details = payload
         
         # O Magalu identifica a ordem pelo 'id' ou 'order_id'
         external_id = str(order_details.get("id") or order_details.get("order_id"))
-        # No Magalu, o seller_id geralmente vem no campo 'seller' ou passamos via parâmetro
-        # Por enquanto, vamos tentar capturar do payload
+        # Captura o seller_id do payload enviado pelo Magalu
         seller_id = str(order_details.get("seller_id", "desconhecido"))
 
-        logger.info(f"📦 Nova Venda Magalu: Pedido #{external_id}")
+        logger.info(f"📦 Nova Notificação Magalu: Pedido #{external_id}")
 
-        # 1. Tenta encontrar a organização vinculada a este seller no nosso banco
+        # 1. Tenta encontrar a organização vinculada no nosso banco
         creds = db.query(MagaluCredential).filter(MagaluCredential.seller_id == seller_id).first()
         store_slug = creds.store_slug if creds else "magalu_vendas"
 
-        # 2. Mapeamento de Status (Magalu para nosso padrão)
-        # Magalu usa: NEW, APPROVED, SHIPPED, DELIVERED, CANCELLED
+        # 2. Mapeamento de Status
         magalu_status = order_details.get("status", "NEW").lower()
         
-        # 3. Lógica de Upsert (Salva ou Atualiza)
-        existing_order = db.query(Order).filter(Order.external_id == external_id, Order.marketplace == "magalu").first()
+        # 3. Lógica de Upsert
+        existing_order = db.query(Order).filter(
+            Order.external_id == external_id, 
+            Order.marketplace == "magalu"
+        ).first()
         
-        # Valor total no Magalu costuma vir em 'total_amount' ou 'total_price'
         total_amount = float(order_details.get("total_amount") or order_details.get("total_price") or 0)
 
         if existing_order:
@@ -55,7 +68,7 @@ async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db
                 raw_data=order_details
             )
             db.add(new_order)
-            logger.info(f"✅ Venda {external_id} criada com sucesso para a loja: {store_slug}")
+            logger.info(f"✅ Venda {external_id} criada para a loja: {store_slug}")
 
         db.commit()
         return {"status": "success", "order_id": external_id}
@@ -63,12 +76,11 @@ async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db
     except Exception as e:
         db.rollback()
         logger.error(f"❌ Erro ao processar Webhook Magalu: {str(e)}")
-        # Respondemos 200 para o Magalu não ficar tentando reenviar em caso de erro de lógica nosso
         return {"status": "error", "message": str(e)}
 
 @router.get("/test-auth/{seller_id}")
 async def test_magalu_auth(seller_id: str, db: Session = Depends(get_db)):
-    """Mantemos aqui para você validar as chaves quando precisar"""
+    """Valida se as chaves e a renovação de token estão funcionando"""
     try:
         token = get_valid_magalu_access_token(db, seller_id)
         return {"status": "success", "token_valido": True}
