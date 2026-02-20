@@ -1,9 +1,11 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Optional
 
-class CBOrderNotification(BaseModel):
-    order_id: str
-    status: str
-    total_amount: float
-    seller_id: Optional[str] = None
-    # Adicione outros campos conforme a documentação deles
+class CBNotification(BaseModel):
+    eventDate: str
+    sellerId: int        # ID numérico da sua loja
+    eventType: str       # New, Approved, Canceled, etc.
+    resourceType: str    # Sempre "Orders"
+    resourceId: int      # ID do pedido (numérico longo)
+    uriResource: str     # Caminho para consulta detalhada (ex: /orders/{id})
+    # O payload completo da notificação pode ser armazenado em 'raw_data' na tabela
