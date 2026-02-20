@@ -51,22 +51,22 @@ def get_valid_magalu_access_token(db: Session, seller_id: str):
         logger.error(f"❌ Erro ao renovar token Magalu: {response.text}")
         raise Exception("Falha na renovação do token Magalu")
 
-def get_magalu_order_details(resource_uri: str, access_token: str):
+def get_magalu_order_details(resource_uri: str, access_token: str, tenant_id: str):
     """
     Busca os detalhes completos do pedido na API da Magalu.
-    A notificação inicial via webhook geralmente contém apenas o link do recurso.
+    Adicionado o header X-Tenant-ID que é obrigatório para APIs Magalu/Integra.
     """
-    # Se o resource vier como path relativo, concatenamos com a base URL
     url = resource_uri if resource_uri.startswith("http") else f"{MAGALU_BASE_URL}{resource_uri}"
     
     headers = {
         "Authorization": f"Bearer {access_token}",
+        "X-Tenant-ID": tenant_id,  # <--- CRÍTICO: Sem isso a consulta falha
         "Accept": "application/json",
         "Content-Type": "application/json"
     }
     
     try:
-        logger.info(f"🔗 Consultando detalhes do pedido Magalu: {url}")
+        logger.info(f"🔗 Consultando detalhes do pedido Magalu: {url} | Tenant: {tenant_id}")
         response = requests.get(url, headers=headers, timeout=15)
         
         if response.status_code == 200:

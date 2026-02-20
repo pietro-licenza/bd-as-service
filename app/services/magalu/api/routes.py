@@ -1,106 +1,87 @@
 # app/services/magalu/api/routes.py
-import logging
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Depends, Request, Header
 from sqlalchemy.orm import Session
+import logging
 from app.core.database import get_db
 from app.models.entities import Order, MagaluCredential
 from app.services.magalu.utils import get_valid_magalu_access_token, get_magalu_order_details
 
+router = APIRouter()
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/webhooks/magalu", tags=["Magalu Webhook"])
 
 @router.post("/notifications")
-async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db)):
+async def magalu_webhook(request: Request, db: Session = Depends(get_db)):
     """
-    Recebe notificações do Magalu e sincroniza com a tabela 'orders'.
+    Endpoint para receber notificações da Magalu (Webhooks).
     """
     try:
-        payload = await request.json()
-        
-        # 1. VALIDAÇÃO DE CHALLENGE
-        if "challenge" in payload:
-            challenge_val = payload.get("challenge")
-            logger.info(f"🛡️ Challenge Magalu validado: {challenge_val}")
-            return {"challenge": challenge_val}
+        data = await request.json()
+        logger.info(f"📩 Nova notificação Magalu recebida: {data}")
 
-        # 2. IDENTIFICAÇÃO DO EVENTO E RECURSO
-        topic = payload.get("topic") or payload.get("event")
-        resource_uri = payload.get("resource") # URL/Path do pedido
-        seller_id = str(payload.get("tenant_id") or payload.get("seller_id", "desconhecido"))
-        
-        logger.info(f"🔔 Notificação Magalu: {topic} para Seller: {seller_id}")
+        # 1. Tratamento do Challenge (Segurança Magalu)
+        if "challenge" in data:
+            challenge_value = data["challenge"]
+            logger.info(f"🛡️ Validando Challenge Magalu: {challenge_value}")
+            return {"challenge": challenge_value}
 
-        # 3. FILTRO DE EVENTOS DE PEDIDO
-        order_topics = ["created_order", "orders_order", "orders_delivery", "order"]
-        if topic not in order_topics:
-            return {"status": "ignored", "message": "Tópico não processado"}
+        # 2. Extração de Metadados
+        topic = data.get("topic")
+        tenant_id = data.get("tenant_id")  # Importante para o header X-Tenant-ID
+        resource_uri = data.get("resource")
 
-        # 4. BUSCA CREDENCIAIS E TOKEN
-        creds = db.query(MagaluCredential).filter(MagaluCredential.seller_id == seller_id).first()
-        if not creds:
-            logger.warning(f"⚠️ Seller Magalu {seller_id} não encontrado.")
-            return {"status": "error", "message": "Seller não cadastrado"}
+        # Filtro: Só processamos novos pedidos (created_order)
+        if topic != "created_order" or not resource_uri:
+            logger.info(f"⏩ Ignorando tópico: {topic}")
+            return {"status": "ignored"}
 
-        store_slug = creds.store_slug
-        token = get_valid_magalu_access_token(db, seller_id)
-
-        # 5. BUSCA DETALHES COMPLETOS (Onde pegamos o valor real)
-        order_info = payload # Fallback
-        if resource_uri:
-            api_details = get_magalu_order_details(resource_uri, token)
-            if api_details:
-                order_info = api_details
-
-        # 6. EXTRAÇÃO DE DADOS PARA A TABELA UNIFICADA
-        external_id = str(order_info.get("id") or order_info.get("order_id"))
-        total_amount = float(order_info.get("total_amount") or order_info.get("total_price") or 0)
-        
-        # Mapeamento de Status
-        magalu_status = str(order_info.get("status", "NEW")).lower()
-        status_map = {
-            "approved": "paid",
-            "paid": "paid",
-            "shipped": "shipped",
-            "delivered": "delivered",
-            "canceled": "cancelado"
-        }
-        final_status = status_map.get(magalu_status, "pendente")
-
-        # 7. LÓGICA DE UPSERT
-        existing_order = db.query(Order).filter(
-            Order.external_id == external_id, 
-            Order.marketplace == "magalu"
+        # 3. Identificar o Seller pelo Tenant ID
+        # No Magalu, o sub do token é o seller_id que usamos no banco
+        # Vamos buscar as credenciais vinculadas a este tenant
+        creds = db.query(MagaluCredential).filter(
+            (MagaluCredential.seller_id == tenant_id) | 
+            (MagaluCredential.seller_id == '3f9afe2b-c52e-4bbe-b50b-d315ccab4970') # Fallback para seu seller fixo se necessário
         ).first()
 
-        if existing_order:
-            existing_order.status = final_status
-            existing_order.total_amount = total_amount
-            existing_order.raw_data = order_info
-            logger.info(f"🔄 Pedido Magalu {external_id} atualizado.")
-        else:
-            new_order = Order(
-                marketplace="magalu",
-                external_id=external_id,
-                seller_id=seller_id,
-                store_slug=store_slug,
-                total_amount=total_amount,
-                status=final_status,
-                raw_data=order_info
-            )
-            db.add(new_order)
-            logger.info(f"✅ Pedido Magalu {external_id} criado.")
+        if not creds:
+            logger.error(f"❌ Seller não encontrado para o tenant_id: {tenant_id}")
+            return {"status": "error", "message": "Seller not found"}
 
+        seller_id = creds.seller_id
+
+        # 4. Obter Token Válido (Renova se necessário)
+        access_token = get_valid_magalu_access_token(db, seller_id)
+
+        # 5. Buscar Detalhes Completos do Pedido (Agora enviando o tenant_id)
+        order_details = get_magalu_order_details(resource_uri, access_token, tenant_id)
+
+        if not order_details:
+            return {"status": "error", "message": "Could not fetch order details"}
+
+        # 6. Salvar no Banco de Dados (Supabase)
+        # Adaptando os campos do JSON da Magalu para seu modelo de Order
+        new_order = Order(
+            external_order_id=str(order_details.get("id")),
+            seller_id=seller_id,
+            source="magalu",
+            total_amount=order_details.get("total_amount"),
+            status=order_details.get("status"),
+            customer_name=order_details.get("customer", {}).get("name"),
+            raw_json=order_details # Guarda o JSON completo para segurança
+        )
+
+        db.add(new_order)
         db.commit()
-        return {"status": "success", "order_id": external_id}
+
+        logger.info(f"✅ Pedido {new_order.external_order_id} salvo com sucesso no banco!")
+        return {"status": "success", "order_id": new_order.external_order_id}
 
     except Exception as e:
-        db.rollback()
-        logger.error(f"❌ Erro Webhook Magalu: {str(e)}")
+        logger.error(f"💥 Erro ao processar webhook Magalu: {str(e)}")
         return {"status": "error", "message": str(e)}
 
+# Rota de teste para saúde do token (Heartbeat)
 @router.get("/test-auth/{seller_id}")
-async def test_magalu_auth(seller_id: str, db: Session = Depends(get_db)):
-    """Valida se a renovação de token está funcionando."""
+def test_magalu_auth(seller_id: str, db: Session = Depends(get_db)):
     try:
         token = get_valid_magalu_access_token(db, seller_id)
         return {"status": "success", "token_valido": True}
