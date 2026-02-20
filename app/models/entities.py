@@ -57,3 +57,13 @@ class MagaluCredential(Base):
     store_slug = Column(String, index=True) # Vínculo com a organização (ex: brazil_direct)
     expires_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class CasasBahiaCredential(Base):
+    """Tabela para gerenciar as chaves de acesso das lojas Casas Bahia"""
+    __tablename__ = "casas_bahia_credentials"
+    id = Column(Integer, primary_key=True, index=True)
+    seller_id = Column(String, unique=True, index=True) # ID da loja no portal
+    client_id = Column(String)
+    access_token = Column(String)
+    store_slug = Column(String, index=True) # Vínculo com a organização (ex: loja_1, loja_2)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
