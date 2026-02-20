@@ -24,15 +24,42 @@ from app.models.entities import ScrapingLog
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/sams-club", tags=["Sam's Club"])
 
-# --- CONFIGURAÇÃO DE CUSTO REAL POR TOKEN (GEMINI 1.5 FLASH / LITE) ---
-# Valores baseados na tabela oficial do Google Cloud Vertex AI / AI Studio
-USD_TO_BRL = 5.10             # Câmbio comercial para conversão
-PRICE_INPUT_1M_USD = 0.075     # Preço por 1M de tokens de entrada ($)
-PRICE_OUTPUT_1M_USD = 0.30     # Preço por 1M de tokens de saída ($)
+# --- CONFIGURAÇÃO DE CUSTO (estimativa para casar com Billing do GCP) ---
+# Referências oficiais de pricing:
+# - Gemini 2.5 Flash-Lite: preço por token (input/output)
+# - Gemini 2.5 Flash: preço por token (input/output)
+# - Gemini 2.5 Flash Image: output de imagem custa US$ 30 / 1.000.000 tokens e
+#   imagens até 1024x1024 consomem ~1290 tokens por imagem.
+#
+# Observação: aqui fazemos a estimativa local para que o custo exibido na aplicação
+# fique o mais próximo possível do Billing do GCP.
 
-# Cálculo do preço unitário por token em Reais
-TOKEN_IN_PRICE = (PRICE_INPUT_1M_USD / 1_000_000) * USD_TO_BRL
-TOKEN_OUT_PRICE = (PRICE_OUTPUT_1M_USD / 1_000_000) * USD_TO_BRL
+USD_TO_BRL = float(os.getenv("USD_TO_BRL", "5.10"))  # Você pode sobrescrever via env
+
+# Preços em USD por 1M tokens (ou por 1M image output tokens)
+PRICING_USD_PER_1M = {
+    # Texto (Step 1)
+    "gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40},
+
+    # Tokens de entrada (texto+imagem) para steps de imagem seguem o preço do 2.5 Flash
+    "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
+
+    # Geração de imagem (Step 2/3) — output de imagem tem preço próprio
+    "gemini-2.5-flash-image": {"image_output": 30.0},
+}
+
+def _brl_per_token(usd_per_1m: float) -> float:
+    return (usd_per_1m / 1_000_000) * USD_TO_BRL
+
+# Preços unitários em BRL
+FLASH_LITE_IN_BRL = _brl_per_token(PRICING_USD_PER_1M["gemini-2.5-flash-lite"]["input"])
+FLASH_LITE_OUT_BRL = _brl_per_token(PRICING_USD_PER_1M["gemini-2.5-flash-lite"]["output"])
+
+FLASH_IN_BRL = _brl_per_token(PRICING_USD_PER_1M["gemini-2.5-flash"]["input"])
+FLASH_OUT_BRL = _brl_per_token(PRICING_USD_PER_1M["gemini-2.5-flash"]["output"])
+
+FLASH_IMAGE_OUT_BRL = _brl_per_token(PRICING_USD_PER_1M["gemini-2.5-flash-image"]["image_output"])
+
 
 @router.post("/process-batch/", response_model=BatchResponse)
 async def process_batch(
@@ -43,7 +70,8 @@ async def process_batch(
 ) -> BatchResponse:
     """
     Processa lote Sam's Club com captura de Usage Metadata real da Google.
-    Cálculo 100% baseado em tokens reportados pela API em todas as etapas.
+    Cálculo baseado em tokens reportados pela API, com regra específica
+    para output de imagem (aproximando o Billing do GCP).
     """
     logger.info(f"🚀 Lote Sam's Club recebido de {user.username}")
     
@@ -53,35 +81,29 @@ async def process_batch(
         match = re.match(r'(product[_\s]?\d+)', file.filename.lower())
         if match:
             pid = match.group(1).replace(' ', '_')
-            if pid not in product_groups: product_groups[pid] = []
+            if pid not in product_groups: 
+                product_groups[pid] = []
             product_groups[pid].append(file)
-    
-    form = await request.form()
-    gemini_client = GeminiClient()
+
     all_products_results = []
-    
     total_batch_tokens = 0
     total_batch_cost_brl = 0.0
 
-    # Processamento individual de cada produto identificado no lote
-    for i, (product_id, product_files) in enumerate(product_groups.items(), 1):
+    for product_id, product_files in product_groups.items():
         temp_dir = tempfile.mkdtemp()
-        temp_paths = []
-        try:
-            # Salva arquivos temporários para processamento
-            for file in product_files:
-                content = await file.read()
-                t_path = Path(temp_dir) / file.filename
-                with open(t_path, "wb") as f: f.write(content)
-                
-                # Conversão opcional de formatos específicos (ex: MPO)
-                from app.shared.gemini_client import convert_mpo_to_jpeg
-                conv_p, _ = convert_mpo_to_jpeg(str(t_path))
-                temp_paths.append(conv_p)
+        gemini_client = GeminiClient()
 
-            # Identifica flags de processamento extra vindas do frontend
-            remove_bg = form.get(f'remove_background_{i}') == 'true'
-            generate_contextual = form.get(f'generate_contextual_{i}') == 'true'
+        try:
+            # Flags vindas do frontend (query params)
+            remove_bg = request.query_params.get("remove_bg", "false").lower() == "true"
+            generate_contextual = request.query_params.get("generate_contextual", "false").lower() == "true"
+
+            temp_paths = []
+            for f in product_files:
+                file_path = os.path.join(temp_dir, f.filename)
+                with open(file_path, "wb") as buffer:
+                    buffer.write(await f.read())
+                temp_paths.append(file_path)
 
             # --- ETAPA 1: EXTRAÇÃO DE DADOS ---
             step1_res = gemini_client.step1_extract_product_data(temp_paths)
@@ -114,12 +136,45 @@ async def process_batch(
                     gen_urls.extend(ctx_res["public_urls"])
                 u3 = ctx_res.get("usage", {"input": 0, "output": 0})
 
-            # --- CÁLCULO FINANCEIRO CONSOLIDADO ---
-            t_in = u1["input"] + u2["input"] + u3["input"]
-            t_out = u1["output"] + u2["output"] + u3["output"]
-            
-            c_in = t_in * TOKEN_IN_PRICE
-            c_out = t_out * TOKEN_OUT_PRICE
+            # --- CÁLCULO FINANCEIRO CONSOLIDADO (aprox. Billing do GCP) ---
+            # Input tokens: usamos prompt_token_count de cada chamada (inclui imagem de entrada quando houver).
+            # Output tokens:
+            # - Step 1: candidates_token_count (texto)
+            # - Step 2/3: image_output_tokens (estimado como 1290 por imagem, se o SDK não trouxer explícito)
+            #
+            # Custos:
+            # - Step 1 (flash-lite): input/output por token
+            # - Step 2/3 (flash-image): input por token (flash) + output de imagem por token (image_output)
+
+            # Tokens
+            step1_in = int(u1.get("input", 0))
+            step1_out_text = int(u1.get("output", 0))
+
+            step2_in = int(u2.get("input", 0))
+            step2_out_text = int(u2.get("output", 0))
+            step2_out_image = int(u2.get("image_output_tokens", 0))
+
+            step3_in = int(u3.get("input", 0))
+            step3_out_text = int(u3.get("output", 0))
+            step3_out_image = int(u3.get("image_output_tokens", 0))
+
+            # Para manter compatibilidade, consideramos output total = texto + imagem
+            t_in = step1_in + step2_in + step3_in
+            t_out = (step1_out_text + step2_out_text + step3_out_text) + (step2_out_image + step3_out_image)
+
+            # Custos por etapa
+            c1_in = step1_in * FLASH_LITE_IN_BRL
+            c1_out = step1_out_text * FLASH_LITE_OUT_BRL
+
+            # Steps de imagem: input segue Flash; output de imagem segue tabela de image output
+            c2_in = step2_in * FLASH_IN_BRL
+            c2_out = (step2_out_text * FLASH_OUT_BRL) + (step2_out_image * FLASH_IMAGE_OUT_BRL)
+
+            c3_in = step3_in * FLASH_IN_BRL
+            c3_out = (step3_out_text * FLASH_OUT_BRL) + (step3_out_image * FLASH_IMAGE_OUT_BRL)
+
+            c_in = c1_in + c2_in + c3_in
+            c_out = c1_out + c2_out + c3_out
             product_total_cost = c_in + c_out
 
             total_batch_tokens += (t_in + t_out)
@@ -142,20 +197,29 @@ async def process_batch(
                 output_cost_brl=round(c_out, 6),
                 total_cost_brl=round(product_total_cost, 6)
             )
-            all_products_results.append(product_response.model_dump())
-            
+
+            all_products_results.append(product_response)
+
         except Exception as e:
-            logger.error(f"❌ Erro ao processar produto {product_id}: {str(e)}")
-            all_products_results.append({
-                "product_id": product_id,
-                "num_images": len(product_files),
-                "filenames": [f.filename for f in product_files],
-                "prompt": "Erro",
-                "gemini_response": "{}",
-                "error": str(e)
-            })
+            logger.error(f"❌ Erro ao processar {product_id}: {e}")
+            all_products_results.append(BatchProductResponse(
+                product_id=product_id,
+                num_images=len(product_files),
+                filenames=[f.filename for f in product_files],
+                prompt="Erro",
+                gemini_response="{}",
+                generated_images_urls=[],
+                error=str(e)
+            ))
         finally: 
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+    # --- GERAÇÃO DE EXCEL ---
+    excel_url = None
+    try:
+        excel_url = generate_standard_excel(all_products_results, loja="sams_club")
+    except Exception as e:
+        logger.error(f"❌ Erro ao gerar Excel: {e}")
 
     # --- PERSISTÊNCIA DE LOGS NO SUPABASE ---
     if all_products_results:
@@ -175,7 +239,8 @@ async def process_batch(
             logger.error(f"❌ Erro ao salvar log: {db_err}")
 
     return BatchResponse(
-        products=all_products_results, 
+        products=all_products_results,
         total_products=len(all_products_results),
+        excel_download_url=excel_url,
         total_cost_batch_brl=round(total_batch_cost_brl, 4)
     )

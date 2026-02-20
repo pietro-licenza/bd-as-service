@@ -123,7 +123,7 @@ async function initVendasPage() {
         globalSet.forEach(o => {
             gV += o.total_amount || 0;
             if (['paid','shipped','approved'].includes(o.status)) gF += o.total_amount;
-            if (o.status === 'cancelled') gC += o.total_amount;
+            if (['cancelled', 'refunded', 'returned'].includes(o.status)) gC += o.total_amount;
         });
 
         gVol.textContent = gV.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -136,7 +136,7 @@ async function initVendasPage() {
         filteredSet.forEach(o => {
             fV += o.total_amount || 0;
             if (['paid','shipped','approved'].includes(o.status)) fF += o.total_amount;
-            if (o.status === 'cancelled') fC += o.total_amount;
+            if (['cancelled', 'refunded', 'returned'].includes(o.status)) fC += o.total_amount;
         });
 
         fVol.textContent = fV.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -159,8 +159,7 @@ function renderOrdersList(orders) {
     container.innerHTML = paginated.map(order => {
         const data = order.raw_data || {};
         let brandColor = order.marketplace === 'mercadolivre' ? '#fff159' : (order.marketplace === 'magalu' ? '#0086ff' : '#3b82f6');
-        const statusColor = ['paid','approved','shipped'].includes(order.status) ? '#2ecc71' : (order.status === 'cancelled' ? '#e74c3c' : '#f1c40f');
-
+        const statusColor = ['paid', 'approved', 'shipped'].includes(order.status) ? '#2ecc71' : (['cancelled', 'refunded', 'returned'].includes(order.status) ? '#e74c3c' : '#f1c40f');
         // Extração de Produto e Qtd
         let productName = "Produto não identificado";
         let qty = 0;

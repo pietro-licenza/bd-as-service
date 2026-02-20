@@ -16,30 +16,81 @@ class GeminiClient:
     def __init__(self):
         """Inicializa o cliente com suporte a rastreamento de tokens e modelos específicos."""
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        # Modelos configurados para extração e geração de imagens
-        self.model_extract = "models/gemini-2.5-flash-lite"
+        # Modelos usados
+        self.model_text = "models/gemini-2.5-flash-lite"
         self.model_image = "models/gemini-2.5-flash-image"
 
-        # Configurações de segurança para permitir o processamento sem bloqueios indevidos
+        # Safety
         self.safety_settings = [
-            types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
             types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
+            types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
             types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
             types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
-            types.SafetySetting(category="HARM_CATEGORY_CIVIC_INTEGRITY", threshold="BLOCK_NONE")
         ]
-
-        logger.info(f"🚀 Gemini Client iniciado. Extração: {self.model_extract} | Imagem: {self.model_image}")
 
     def _extract_usage(self, response) -> Dict[str, int]:
         """
         Captura segura dos tokens retornados pela API Gemini.
-        Essencial para o cálculo de custos no Dashboard.
+
+        Observação importante:
+        - A API pode cobrar tokens de modalidades diferentes (texto vs imagem).
+        - Para geração de imagem, o Billing do GCP reporta "image output token count".
+          Nem sempre esse número aparece diretamente em `usage_metadata`, então aqui
+          tentamos extrair quando existir e, caso não exista, os steps de imagem
+          vão estimar pelos parâmetros do modelo (ex.: 1290 tokens por imagem 1024x1024).
         """
         usage = getattr(response, "usage_metadata", None)
+
+        prompt_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)
+        candidates_tokens = int(getattr(usage, "candidates_token_count", 0) or 0)
+        total_tokens = int(getattr(usage, "total_token_count", 0) or 0)
+
+        # Tenta extrair campos adicionais que podem existir em versões diferentes do SDK/API.
+        image_output_tokens = 0
+        try:
+            # Alguns SDKs/versões podem expor isso direto.
+            for attr in (
+                "image_output_token_count",
+                "imageOutputTokenCount",
+                "image_output_tokens",
+                "imageOutputTokens",
+            ):
+                if hasattr(usage, attr):
+                    val = getattr(usage, attr)
+                    if val is not None:
+                        image_output_tokens = int(val)
+                        break
+
+            # Outras versões expõem detalhes por modalidade (lista de objetos).
+            if image_output_tokens == 0:
+                for attr in (
+                    "candidates_tokens_details",
+                    "candidatesTokensDetails",
+                    "candidates_token_details",
+                    "candidatesTokenDetails",
+                ):
+                    if hasattr(usage, attr):
+                        details = getattr(usage, attr) or []
+                        for d in details:
+                            modality = getattr(d, "modality", None) or getattr(d, "modality_type", None)
+                            token_count = getattr(d, "token_count", None) or getattr(d, "tokenCount", None)
+                            if str(modality).upper() in {"IMAGE", "MODALITY_IMAGE"} and token_count is not None:
+                                image_output_tokens = int(token_count)
+                                break
+                        if image_output_tokens:
+                            break
+        except Exception:
+            # Se não der pra ler, seguimos com 0 e os steps de imagem podem estimar.
+            image_output_tokens = 0
+
         return {
-            "input": int(getattr(usage, "prompt_token_count", 0) or 0),
-            "output": int(getattr(usage, "candidates_token_count", 0) or 0)
+            # Backward-compatible
+            "input": prompt_tokens,
+            "output": candidates_tokens,
+
+            # Campos extras para aproximar do Billing do GCP
+            "image_output_tokens": image_output_tokens,
+            "total_token_count": total_tokens,
         }
 
     def _resize_image(self, pil_img, max_size=800):
@@ -62,24 +113,24 @@ class GeminiClient:
                     img = PIL.Image.open(p).convert('RGB')
                     img = self._resize_image(img)
                     processed_images.append(img)
+        except Exception as e:
+            return {"error": f"Erro ao abrir imagens: {e}", "usage": {"input": 0, "output": 0}}
 
-            if not processed_images:
-                return {"error": "Nenhuma imagem válida encontrada.", "usage": {"input": 0, "output": 0}}
+        prompt = """
+Você é um assistente especialista em produtos do Sam's Club.
+A partir das imagens do produto, extraia um JSON com:
+- nome
+- preco (apenas número se possível)
+- codigo_barras (EAN/UPC se visível)
+- descricao (curta e objetiva)
+- foto_ideal_index (1 a N) apontando a melhor foto frontal do produto
 
-            # PROMPT AJUSTADO: Instruções claras sobre a indexação da foto ideal
-            prompt = (
-                "Analyze the product photos and return ONLY a JSON with: 'nome', 'preco', 'codigo_barras', 'descricao', 'foto_ideal_index'.\n\n"
-                "RULES FOR 'foto_ideal_index':\n"
-                "- Use 1 for the first image, 2 for the second, and so on. Do NOT use 0.\n\n"
-                "STRICT RULES FOR THE 'descricao' FIELD:\n"
-                "- Create a professional, well-written, and complete advertisement description.\n"
-                "- Be clear, informative, and attractive in natural language.\n"
-                "- AVOID: emojis, HTML, prices, brand names, quotes, and special characters.\n"
-                "- MINIMUM 3 paragraphs."
-            )
+Retorne APENAS um JSON válido (sem markdown).
+"""
 
+        try:
             response = self.client.models.generate_content(
-                model=self.model_extract,
+                model=self.model_text,
                 contents=[prompt] + processed_images,
                 config=types.GenerateContentConfig(safety_settings=self.safety_settings)
             )
@@ -88,23 +139,24 @@ class GeminiClient:
 
             try:
                 # Extração robusta do JSON da resposta de texto
-                json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
-                res_json = json.loads(json_match.group(0)) if json_match else {}
+                json_text = response.text or "{}"
+                json_text = re.sub(r"^```json|```$", "", json_text.strip(), flags=re.MULTILINE).strip()
+                parsed = json.loads(json_text)
             except Exception:
-                res_json = {"raw_output": response.text}
+                parsed = {}
 
             return {
-                "gemini_response": json.dumps(res_json, ensure_ascii=False),
-                "infos_extraidas": res_json,
+                "infos_extraidas": parsed,
+                "gemini_response": json.dumps(parsed, ensure_ascii=False),
                 "usage": usage_data
             }
 
         except Exception as e:
-            logger.error(f"💥 Erro Step 1: {e}")
+            logger.error(f"❌ Erro Step 1: {e}")
             return {"error": str(e), "usage": {"input": 0, "output": 0}}
 
     # ---------------------------
-    # STEP 2: Remoção de Fundo
+    # STEP 2: Remoção de Fundo (via geração)
     # ---------------------------
     def step2_generate_background_removed_image(self, image_path: str) -> Dict[str, Any]:
         """Gera uma imagem do produto com fundo branco puro."""
@@ -136,6 +188,11 @@ class GeminiClient:
 
                 if not image_part:
                     return {"error": "Nenhuma imagem foi retornada na resposta.", "usage": usage_data}
+
+                # Estimativa de tokens de saída de imagem (para casar com Billing do GCP)
+                # Gemini 2.5 Flash Image: ~1290 tokens por imagem até 1024x1024.
+                if usage_data.get("image_output_tokens", 0) in (0, None):
+                    usage_data["image_output_tokens"] = 1290
 
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
                     tmp.write(image_part.inline_data.data)
@@ -190,6 +247,11 @@ class GeminiClient:
 
                 if not image_part:
                     return {"error": "Não foi possível extrair a imagem ambientada.", "usage": usage_data}
+
+                # Estimativa de tokens de saída de imagem (para casar com Billing do GCP)
+                # Gemini 2.5 Flash Image: ~1290 tokens por imagem até 1024x1024.
+                if usage_data.get("image_output_tokens", 0) in (0, None):
+                    usage_data["image_output_tokens"] = 1290
 
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
                     tmp.write(image_part.inline_data.data)
