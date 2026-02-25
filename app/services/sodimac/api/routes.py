@@ -2,6 +2,9 @@
 API routes for Sodimac product processing service with cost tracking.
 Versão Final: Integração total com Supabase, Segurança e Relatório Excel.
 """
+
+from fastapi import Request
+from fastapi.responses import FileResponse
 import logging
 import re  # Importado para o tratamento das URLs de imagem
 from typing import List
@@ -30,6 +33,25 @@ PRICE_IN = (0.10 / 1_000_000) * USD_TO_BRL  # Entrada: $0.10 por 1M
 PRICE_OUT = (0.40 / 1_000_000) * USD_TO_BRL # Saída: $0.40 por 1M
 
 router = APIRouter(prefix="/api/sodimac", tags=["Sodimac"])
+
+@router.post("/generate-excel/")
+async def generate_excel(request: Request):
+    """
+    Gera Excel com marca alterada para URLs selecionadas.
+    Recebe JSON com 'produtos' e 'alterar_marca_urls'.
+    """
+    body = await request.json()
+    produtos = body.get('produtos', [])
+    alterar_marca_urls = body.get('alterar_marca_urls', [])
+    for p in produtos:
+        if p.get('url_original') in alterar_marca_urls:
+            p['marca'] = 'Brazil Home Living'
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    excel_filename = f"sodimac_produtos_{timestamp}.xlsx"
+    generate_standard_excel(produtos, excel_filename, settings.EXPORTS_DIR, "Sodimac", "FF6B35")
+    excel_path = f"{settings.EXPORTS_DIR}/{excel_filename}"
+    return FileResponse(excel_path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=excel_filename)
+
 
 @router.post("/process-urls/", response_model=BatchResponse)
 async def process_product_urls(

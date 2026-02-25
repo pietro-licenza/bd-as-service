@@ -109,9 +109,53 @@ function initLeroyMerlinPage() {
                 downloadContainer.innerHTML = `
                     <div class="download-card" style="background:rgba(0,168,89,0.1); border:1px solid #00A859; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;">
                         <span style="color:#00A859; font-weight:600;">📊 Relatório Excel pronto para download!</span>
-                        <a href="${data.excel_download_url}" download class="btn btn-primary" style="background:#00A859; padding:8px 20px; text-decoration:none; font-size:0.9rem; color: white; border-radius: 5px;">⬇️ Baixar Excel</a>
+                        <button id="customExcelDownloadBtn" class="btn btn-primary" style="background:#00A859; padding:8px 20px; font-size:0.9rem; color: white; border-radius: 5px;">⬇️ Baixar Excel</button>
                     </div>
                 `;
+                // Adiciona lógica para download customizado
+                setTimeout(() => {
+                    const btn = document.getElementById('customExcelDownloadBtn');
+                    if (btn) {
+                        btn.addEventListener('click', async () => {
+                            // Captura produtos com checkbox marcado
+                            const checkboxes = document.querySelectorAll('.alterar-marca-checkbox');
+                            const alterar_marca_urls = [];
+                            checkboxes.forEach(cb => {
+                                if (cb.checked) {
+                                    alterar_marca_urls.push(cb.getAttribute('data-url'));
+                                }
+                            });
+                            // Captura todos os produtos processados
+                            const produtos = (window.leroyMerlinProducts || []);
+                            btn.disabled = true;
+                            btn.textContent = '⏳ Gerando Excel...';
+                            try {
+                                const resp = await fetch('/api/leroy-merlin/generate-excel/', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ produtos, alterar_marca_urls })
+                                });
+                                if (!resp.ok) throw new Error('Erro ao gerar Excel');
+                                const blob = await resp.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'relatorio_leroy_merlin.xlsx';
+                                document.body.appendChild(a);
+                                a.click();
+                                a.remove();
+                                window.URL.revokeObjectURL(url);
+                            } catch (e) {
+                                alert('Erro ao gerar Excel: ' + e.message);
+                            } finally {
+                                btn.disabled = false;
+                                btn.textContent = '⬇️ Baixar Excel';
+                            }
+                        });
+                    }
+                }, 100);
+                        // Salva produtos processados para download
+                        window.leroyMerlinProducts = data.products;
             }
 
             // 3. Renderização dos cards de produtos
@@ -130,22 +174,30 @@ function initLeroyMerlinPage() {
                 
                 return `
                 <div class="product-result">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1rem;">
-                        <h3 style="margin:0; color:var(--text-primary);">✅ ${p.titulo}</h3>
-                        <span class="badge" style="background:rgba(59,130,246,0.1); color:#3b82f6;">Investimento: ${formatBRL(p.total_cost_brl)}</span>
+                    <div style="display:flex; flex-direction:column; margin-bottom:1rem;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                            <h3 style="margin:0; color:var(--text-primary);">✅ ${p.titulo}</h3>
+                            <span class="badge" style="background:rgba(59,130,246,0.1); color:#3b82f6;">Investimento: ${formatBRL(p.total_cost_brl)}</span>
+                        </div>
+                        <div style="margin-top:0.7rem; display:flex; align-items:center; gap:18px; background:rgba(30,30,30,0.18); border-radius:8px; padding:8px 18px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+                            <span style="font-size:1.3rem; color:var(--success-color); font-weight:700; letter-spacing:0.5px;">Marca: ${p.marca}</span>
+                            <label style="display:flex; align-items:center; gap:12px; font-size:1.2rem; color:#3b82f6; font-weight:600;">
+                                <input type="checkbox" class="alterar-marca-checkbox" data-url="${p.url_original}" style="width:28px; height:28px; border-radius:8px; box-shadow:0 1px 6px rgba(59,130,246,0.15); accent-color:#3b82f6;" />
+                                <span style="font-size:1.2rem;">Alterar Marca</span>
+                            </label>
+                        </div>
                     </div>
-
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; background:rgba(0,0,0,0.25); padding:14px; border-radius:8px; margin-bottom:1.5rem; font-size:0.85rem; border:1px solid rgba(255,255,255,0.05);">
                         <div style="border-right:1px solid #444; padding-right:10px;">
                             <small style="color:#888; display:block; margin-bottom:4px;">📥 INPUT (PROMPT + URL)</small>
-                            <div style="display:flex; justify-content:space-between;">
+                            <div style="color:#ede8e8; display:flex; justify-content:space-between;">
                                 <b>${p.input_tokens} tks</b>
                                 <span style="color:#aaa;">${formatBRL(p.input_cost_brl)}</span>
                             </div>
                         </div>
                         <div style="padding-left:5px;">
                             <small style="color:#888; display:block; margin-bottom:4px;">📤 OUTPUT (IA + JSON)</small>
-                            <div style="display:flex; justify-content:space-between;">
+                            <div style="color:#ede8e8; display:flex; justify-content:space-between;">
                                 <b>${p.output_tokens} tks</b>
                                 <span style="color:#aaa;">${formatBRL(p.output_cost_brl)}</span>
                             </div>
@@ -157,11 +209,9 @@ function initLeroyMerlinPage() {
                             <p style="color:var(--success-color); font-size:1.8rem; font-weight:700; margin:0;">${p.preco}</p>
                             <small style="color:#666;">Original: <a href="${p.url_original}" target="_blank" style="color:#3b82f6;">Ver na Leroy</a></small>
                         </div>
-                        
                         <div style="color:#ccc; line-height:1.7; margin-bottom:1.5rem; font-size:0.95rem; background:rgba(255,255,255,0.02); padding:15px; border-radius:8px;">
                             ${p.descricao.replace(/\n/g, '<br>')}
                         </div>
-                        
                         <div style="display:flex; gap:12px; overflow-x:auto; padding-bottom:10px; scrollbar-width: thin;">
                             ${p.image_urls.map(img => `
                                 <div class="image-wrapper" style="position:relative; flex-shrink:0;">

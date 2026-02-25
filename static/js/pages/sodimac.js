@@ -126,55 +126,102 @@ function initSodimacPage() {
                 downloadContainer.innerHTML = `
                     <div class="download-card" style="background:rgba(255,107,53,0.05); border:1px solid #FF6B35; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;">
                         <span style="color:#FF6B35; font-weight:600;">📊 Relatório Sodimac gerado com sucesso!</span>
-                        <a href="${data.excel_download_url}" download class="btn btn-primary" style="background:#FF6B35; border:none; padding:8px 20px; text-decoration:none; font-size:0.9rem; color:white; border-radius:5px;">⬇️ Baixar Excel</a>
+                        <button id="customExcelDownloadBtn" class="btn btn-primary" style="background:#FF6B35; border:none; padding:8px 20px; font-size:0.9rem; color:white; border-radius:5px;">⬇️ Baixar Excel</button>
                     </div>
                 `;
+                setTimeout(() => {
+                    const btn = document.getElementById('customExcelDownloadBtn');
+                    if (btn) {
+                        btn.addEventListener('click', async () => {
+                            // Captura produtos com checkbox marcado
+                            const checkboxes = document.querySelectorAll('.alterar-marca-checkbox');
+                            const alterar_marca_urls = [];
+                            checkboxes.forEach(cb => {
+                                if (cb.checked) {
+                                    alterar_marca_urls.push(cb.getAttribute('data-url'));
+                                }
+                            });
+                            // Captura todos os produtos processados
+                            const produtos = (window.sodimacProducts || []);
+                            btn.disabled = true;
+                            btn.textContent = '⏳ Gerando Excel...';
+                            try {
+                                const resp = await fetch('/api/sodimac/generate-excel/', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ produtos, alterar_marca_urls })
+                                });
+                                if (!resp.ok) throw new Error('Erro ao gerar Excel');
+                                const blob = await resp.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'relatorio_sodimac.xlsx';
+                                document.body.appendChild(a);
+                                a.click();
+                                a.remove();
+                                window.URL.revokeObjectURL(url);
+                            } catch (e) {
+                                alert('Erro ao gerar Excel: ' + e.message);
+                            } finally {
+                                btn.disabled = false;
+                                btn.textContent = '⬇️ Baixar Excel';
+                            }
+                        });
+                    }
+                }, 100);
             }
 
             // 3. Renderização dos Resultados
             resultsDiv.innerHTML = '';
+            window.sodimacProducts = data.products;
             data.products.forEach(p => {
                 const isError = !!p.error;
                 const resultId = AppState.resultCounter++;
-
-                // Lógica HD para imagens da Sodimac
                 const hdImages = (p.image_urls || []).map(url => {
                     let cleanUrl = url.split(',')[0].trim();
                     return cleanUrl.replace(/w=(76|120)/, 'w=1036');
                 });
-
                 const resultHTML = `
                 <div class="product-result ${isError ? 'error' : ''}" id="result-${resultId}">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1rem;">
-                        <h3 style="margin:0; color:var(--text-primary);">${isError ? '❌' : '✅'} ${p.titulo || 'Erro'}</h3>
-                        <span class="badge" style="background:rgba(255,107,53,0.1); color:#FF6B35;">Custo: ${formatBRL(p.total_cost_brl)}</span>
+                    <div style="display:flex; flex-direction:column; margin-bottom:1rem;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                            <h3 style="margin:0; color:var(--text-primary);">${isError ? '❌' : '✅'} ${p.titulo || 'Erro'}</h3>
+                            <span class="badge" style="background:rgba(255,107,53,0.1); color:#FF6B35;">Custo: ${formatBRL(p.total_cost_brl)}</span>
+                        </div>
+                        ${!isError ? `
+                        <div style="margin-top:0.7rem; display:flex; align-items:center; gap:18px; background:rgba(255,107,53,0.08); border-radius:8px; padding:8px 18px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+                            <span style="font-size:1.3rem; color:#FF6B35; font-weight:700; letter-spacing:0.5px;">Marca: ${p.marca}</span>
+                            <label style="display:flex; align-items:center; gap:12px; font-size:1.2rem; color:#FF6B35; font-weight:600;">
+                                <input type="checkbox" class="alterar-marca-checkbox" data-url="${p.url_original}" style="width:28px; height:28px; border-radius:8px; box-shadow:0 1px 6px rgba(255,107,53,0.15); accent-color:#FF6B35;" />
+                                <span style="font-size:1.2rem;">Alterar Marca</span>
+                            </label>
+                        </div>
+                        ` : ''}
                     </div>
-
                     ${!isError ? `
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; background:rgba(0,0,0,0.25); padding:14px; border-radius:8px; margin-bottom:1.5rem; font-size:0.85rem; border:1px solid rgba(255,255,255,0.05);">
                         <div style="border-right:1px solid #444; padding-right:10px;">
                             <small style="color:#888; display:block; margin-bottom:4px;">📥 INPUT (PROMPT + URL)</small>
-                            <div style="display:flex; justify-content:space-between;">
+                            <div style="color:#f0eded; display:flex; justify-content:space-between;">
                                 <b>${p.input_tokens} tks</b>
                                 <span style="color:#aaa;">${formatBRL(p.input_cost_brl)}</span>
                             </div>
                         </div>
                         <div style="padding-left:5px;">
                             <small style="color:#888; display:block; margin-bottom:4px;">📤 OUTPUT (IA + JSON)</small>
-                            <div style="display:flex; justify-content:space-between;">
+                            <div style="color:#f0eded; display:flex; justify-content:space-between;">
                                 <b>${p.output_tokens} tks</b>
                                 <span style="color:#aaa;">${formatBRL(p.output_cost_brl)}</span>
                             </div>
                         </div>
                     </div>` : ''}
-
                     <div class="product-data">
                         ${isError ? `<p style="color:#ef4444;">${p.error}</p>` : `
                             <p style="color:#FF6B35; font-size:1.8rem; font-weight:700; margin:0.5rem 0;">${p.preco}</p>
                             <div style="color:#ccc; line-height:1.7; margin-bottom:1.5rem; font-size:0.95rem; background:rgba(255,255,255,0.02); padding:15px; border-radius:8px;">
                                 ${p.descricao.replace(/\n/g, '<br>')}
                             </div>
-                            
                             <div style="display:flex; gap:12px; overflow-x:auto; padding-bottom:10px; scrollbar-width: thin;">
                                 ${hdImages.map(img => `
                                     <img src="${img}" style="height:120px; border-radius:8px; border:1px solid #333; cursor:pointer;" 
@@ -186,7 +233,6 @@ function initSodimacPage() {
                 </div>`;
                 resultsDiv.insertAdjacentHTML('beforeend', resultHTML);
             });
-
             resultsDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
         } catch (e) {
