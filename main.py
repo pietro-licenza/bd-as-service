@@ -26,6 +26,7 @@ from app.api.dashboard import router as dashboard_router
 from app.services.mercado_livre.api.routes import router as ml_webhook_router
 from app.services.magalu.api.routes import router as magalu_router
 from app.services.casas_bahia.api.routes import router as cb_router
+from app.services.decathlon.api.routes import router as decathlon_router
 
 # Configure logging
 logging.basicConfig(
@@ -74,6 +75,7 @@ app.include_router(dashboard_router, tags=["Dashboard"])
 app.include_router(sams_club_router, tags=["Sam's Club"])
 app.include_router(leroy_merlin_router, tags=["Leroy Merlin"])
 app.include_router(sodimac_router, tags=["Sodimac"])
+app.include_router(decathlon_router, tags=["Decathlon"])
 app.include_router(ml_webhook_router, tags=["Mercado Livre Webhook"])
 app.include_router(magalu_router, tags=["Magalu Webhook"])
 app.include_router(cb_router, tags=["Casas Bahia Webhook"])

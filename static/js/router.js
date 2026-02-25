@@ -63,6 +63,7 @@ class Router {
                 'sams': 'nav-sams-club',
                 'leroy': 'nav-leroy-merlin',
                 'sodimac': 'nav-sodimac',
+                'decathlon': 'nav-decathlon',
                 'outras': 'nav-other-integration'
             };
             document.getElementById(navMap[service])?.classList.add('active');

@@ -690,6 +690,12 @@ input[type="file"] {
     padding: 3rem 1.5rem;
 }
 
+.loading p {
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    margin-top: 1rem;
+}
+
 .spinner {
     width: 48px;
     height: 48px;

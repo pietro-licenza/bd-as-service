@@ -19,7 +19,7 @@ const AppState = {
 // Page Templates
 const HomeTemplate = () => `
     <div style="text-align: center; padding: 4rem 2rem;">
-        <h1 style="font-size: 3rem; color: var(--text-primary); margin-bottom: 1rem;">👋 Bem-vindo ao BD | AS</h1>
+        <h1 style="font-size: 3rem; color: var(--text-primary); margin-bottom: 1rem;"> Bem-vindo ao BD | AS</h1>
         <p style="font-size: 1.25rem; color: var(--text-secondary); margin-bottom: 2rem;">Plataforma de Integração e Automação</p>
         <div style="max-width: 600px; margin: 0 auto; background: var(--bg-primary); padding: 2rem; border-radius: 16px; box-shadow: var(--shadow-md);">
             <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">Selecione uma opção no menu lateral para começar.</p>
@@ -35,6 +35,10 @@ const HomeTemplate = () => `
                 <a href="#/integracoes/sodimac" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 1rem 2rem; background: linear-gradient(135deg, #FF6B35 0%, #E55A2B 100%); color: white; text-decoration: none; border-radius: 12px; font-weight: 600; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
                     <span>🏪</span>
                     <span>Sodimac</span>
+                </a>
+                <a href="#/integracoes/decathlon" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 1rem 2rem; background: linear-gradient(135deg, #0082C3 0%, #005a87 100%); color: white; text-decoration: none; border-radius: 12px; font-weight: 600; transition: transform 0.2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+                    <span>🏸</span>
+                    <span>Decathlon</span>
                 </a>
             </div>
         </div>
@@ -85,6 +89,12 @@ document.addEventListener('DOMContentLoaded', () => {
         title: 'Integrações - Sodimac',
         render: SodimacTemplate,
         onMount: initSodimacPage
+    });
+
+    router.addRoute('/integracoes/decathlon', {
+        title: 'Integrações - Decathlon',
+        render: DecathlonTemplate,
+        onMount: initDecathlonPage
     });
 
     // Initialize sidebar toggles
