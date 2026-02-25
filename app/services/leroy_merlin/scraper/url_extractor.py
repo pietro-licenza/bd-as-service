@@ -97,7 +97,7 @@ def extract_images_1800(product_url: str) -> List[str]:
         except Exception:
             logger.debug("⚠️  og:image extraction failed", exc_info=True)
 
-        # Normalize and deduplicate while preserving order
+        # Normalize, deduplicate, and encode commas while preserving order
         normalized: List[str] = []
         for u in candidates:
             if not u:
@@ -105,6 +105,8 @@ def extract_images_1800(product_url: str) -> List[str]:
             # Unescape common escapes
             u = u.replace('\\/', '/')
             u = unquote(u)
+            # Encode commas as %2C for Mercado Livre compatibility
+            u = u.replace(',', '%2C')
             if u not in normalized:
                 normalized.append(u)
 
@@ -129,14 +131,9 @@ def extract_images_1800(product_url: str) -> List[str]:
             except Exception:
                 filtered = normalized
 
-        # Prefer full-resolution (1800) images first, then any others
-        final_order: List[str] = []
-        for u in filtered:
-            if '1800x1800' in u and u not in final_order:
-                final_order.append(u)
-        for u in filtered:
-            if u not in final_order:
-                final_order.append(u)
+        # Filtrar apenas imagens 1800x1800
+        only_1800 = [u for u in filtered if '1800x1800' in u]
+        final_order: List[str] = only_1800 if only_1800 else filtered
 
         if not final_order:
             logger.warning("⚠️  No product-specific images found; returning best-effort list")
