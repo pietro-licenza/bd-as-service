@@ -57,66 +57,68 @@ async def sync_magalu_orders(
 
 @router.post("/notifications")
 async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db)):
-    """Recebe notificações em tempo real e salva no banco"""
+    """Recebe notificações em tempo real e salva no banco dinamicamente"""
     data = await request.json()
     
-    # Responder ao challenge de validação da Magalu
     if "challenge" in data:
         return {"challenge": data["challenge"]}
 
-    # Se não vier tenant_id na notificação, usamos o padrão da Brazil Direct
     tenant_id = data.get("tenant_id") or settings.MAGALU_TENANT_ID
-    resource_id = data.get("resource") # ID ou Número do pedido
+    resource_id = data.get("resource")
 
     if resource_id:
         try:
             logger.info(f"📥 Webhook Magalu recebido: Recurso {resource_id}")
             
-            # 1. Obter token válido
+            # 1. Buscar a credencial para saber qual é o store_slug desta loja
+            creds = db.query(MagaluCredential).filter(MagaluCredential.seller_id == tenant_id).first()
+            if not creds:
+                logger.error(f"❌ Credenciais não encontradas para o Tenant {tenant_id}")
+                return {"status": "error", "message": "Tenant não cadastrado"}
+            
+            store_slug = creds.store_slug # <--- Pega o slug real (ex: brazil_direct, outra_loja, etc)
+            
+            # 2. Obter token válido (usando a função que já renova se precisar)
             token = get_valid_magalu_access_token(db, tenant_id)
             
-            # 2. Buscar detalhes completos do pedido
+            # 3. Buscar detalhes do pedido
             full_data = get_magalu_order_details(resource_id, token, tenant_id)
             
             if full_data:
-                # 3. Extrair ID Técnico e tratar valores
-                # Usamos o ID UUID como chave única no banco para evitar duplicados
                 ext_id = str(full_data.get("id"))
                 
+                # Tratar valores
                 total_raw = full_data.get('amounts', {}).get('total', 0)
                 norm = full_data.get('amounts', {}).get('normalizer', 100)
                 total_final = float(total_raw) / norm
 
-                # 4. Verificar se o pedido já existe (UPSERT)
+                # Verificar se o pedido já existe
                 existing_order = db.query(Order).filter(Order.external_id == ext_id).first()
 
                 if existing_order:
-                    # Atualiza o status e os dados brutos
                     existing_order.status = full_data.get("status", "approved")
                     existing_order.total_amount = total_final
                     existing_order.raw_data = full_data
-                    logger.info(f"🔄 Pedido {ext_id} atualizado no banco.")
+                    logger.info(f"🔄 Pedido {ext_id} atualizado para a loja {store_slug}.")
                 else:
-                    # Cria um novo registro
+                    # 4. CRIAR NOVO PEDIDO COM O SLUG DINÂMICO
                     new_order = Order(
                         marketplace="magalu",
                         external_id=ext_id,
                         seller_id=tenant_id,
-                        store_slug="brazil_direct",
+                        store_slug=store_slug, # <--- Agora está dinâmico como no Mercado Livre!
                         total_amount=total_final,
                         status=full_data.get("status", "approved"),
                         raw_data=full_data
                     )
                     db.add(new_order)
-                    logger.info(f"✅ Novo pedido {ext_id} inserido no banco.")
+                    logger.info(f"✅ Novo pedido {ext_id} inserido para a loja {store_slug}.")
                 
                 db.commit()
-            else:
-                logger.warning(f"⚠️ Não foi possível obter detalhes do pedido {resource_id}")
-                
+            
         except Exception as e:
             logger.error(f"💥 Erro ao processar webhook Magalu: {str(e)}")
-            db.rollback() # Reverte em caso de erro no banco
+            db.rollback()
     
     return {"status": "success"}
 
