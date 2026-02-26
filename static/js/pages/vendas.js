@@ -159,19 +159,33 @@ function renderOrdersList(orders) {
     container.innerHTML = paginated.map(order => {
         const data = order.raw_data || {};
         let brandColor = order.marketplace === 'mercadolivre' ? '#fff159' : (order.marketplace === 'magalu' ? '#0086ff' : '#3b82f6');
+        
+        // Normalização de Cores de Status (Incluindo os novos status normalizados)
         const statusColor = ['paid', 'approved', 'shipped'].includes(order.status) ? '#2ecc71' : (['cancelled', 'refunded', 'returned'].includes(order.status) ? '#e74c3c' : '#f1c40f');
-        // Extração de Produto e Qtd
+        
         let productName = "Produto não identificado";
         let qty = 0;
 
+        // --- LÓGICA DE EXTRAÇÃO POR MARKETPLACE ---
         if (order.marketplace === 'mercadolivre') {
             const items = data.order_items || [];
             productName = items.length > 0 ? items[0].item.title : "Venda ML";
             qty = items.reduce((acc, i) => acc + (i.quantity || 0), 0);
-        } else if (order.marketplace === 'magalu') {
-            const items = data.items || [];
-            productName = items.length > 0 ? items[0].name : "Venda Magalu";
-            qty = items.reduce((acc, i) => acc + (i.quantity || 1), 0);
+        } 
+        else if (order.marketplace === 'magalu') {
+            // Na Magalu, os itens estão dentro de 'deliveries'
+            const deliveries = data.deliveries || [];
+            if (deliveries.length > 0 && deliveries[0].items && deliveries[0].items.length > 0) {
+                const firstItem = deliveries[0].items[0];
+                productName = firstItem.info?.name || "Venda Magalu";
+                // Soma a quantidade de todos os itens em todas as entregas
+                qty = deliveries.reduce((total, del) => {
+                    return total + (del.items || []).reduce((sum, i) => sum + (i.quantity || 0), 0);
+                }, 0);
+            } else {
+                productName = "Venda Magalu";
+                qty = 1; // Fallback caso não encontre a estrutura
+            }
         }
 
         return `

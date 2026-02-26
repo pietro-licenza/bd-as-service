@@ -85,37 +85,39 @@ async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db
             full_data = get_magalu_order_details(resource_id, token, tenant_id)
             
             if full_data:
-                ext_id = str(full_data.get("id"))
-                
-                # Tratar valores
+                # 1. Normalização do ID: Usamos o 'code' (1514...) pois é o que você quer ver no Painel
+                ext_id = str(full_data.get("code")) 
+
+                # 2. Normalização do Status: 
+                # Se na Magalu é 'approved', salvamos no banco como 'paid' (para bater com o ML)
+                raw_status = full_data.get("status")
+                status_final = "paid" if raw_status == "approved" else raw_status
+
+                # 3. Cálculo do valor (já corrigido)
                 total_raw = full_data.get('amounts', {}).get('total', 0)
                 norm = full_data.get('amounts', {}).get('normalizer', 100)
                 total_final = float(total_raw) / norm
 
-                # Verificar se o pedido já existe
+                # 4. UPSERT (Cria ou Atualiza)
                 existing_order = db.query(Order).filter(Order.external_id == ext_id).first()
 
                 if existing_order:
-                    existing_order.status = full_data.get("status", "approved")
+                    existing_order.status = status_final
                     existing_order.total_amount = total_final
                     existing_order.raw_data = full_data
-                    logger.info(f"🔄 Pedido {ext_id} atualizado para a loja {store_slug}.")
                 else:
-                    # 4. CRIAR NOVO PEDIDO COM O SLUG DINÂMICO
                     new_order = Order(
                         marketplace="magalu",
-                        external_id=ext_id,
+                        external_id=ext_id,     # Agora salva '1514670100604620'
                         seller_id=tenant_id,
-                        store_slug=store_slug, # <--- Agora está dinâmico como no Mercado Livre!
+                        store_slug=store_slug,
                         total_amount=total_final,
-                        status=full_data.get("status", "approved"),
+                        status=status_final,    # Agora salva 'paid'
                         raw_data=full_data
                     )
                     db.add(new_order)
-                    logger.info(f"✅ Novo pedido {ext_id} inserido para a loja {store_slug}.")
                 
                 db.commit()
-            
         except Exception as e:
             logger.error(f"💥 Erro ao processar webhook Magalu: {str(e)}")
             db.rollback()
