@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     # Mercado Livre (Vindo apenas das variáveis de ambiente)
     ML_CLIENT_ID: Optional[str] = os.getenv("ML_CLIENT_ID")
     ML_CLIENT_SECRET: Optional[str] = os.getenv("ML_CLIENT_SECRET")
-    
+
     # Casas Bahia (Vindo apenas das variáveis de ambiente)
     CB_CLIENT_ID: Optional[str] = os.getenv("CB_CLIENT_ID")
     CB_ACCESS_TOKEN: Optional[str] = os.getenv("CB_ACCESS_TOKEN")
@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     # Magalu (Vindo apenas das variáveis de ambiente)
     MAGALU_CLIENT_ID: Optional[str] = os.getenv("MAGALU_CLIENT_ID")
     MAGALU_CLIENT_SECRET: Optional[str] = os.getenv("MAGALU_CLIENT_SECRET")
+    MAGALU_TENANT_ID: str = "64c48b1f-d1f4-448f-a540-6c68eb9d2be2"
 
 
     # --- SEGURANÇA E BANCO DE DADOS ---

@@ -1,7 +1,6 @@
 # app/services/magalu/utils.py
 import requests
 import logging
-import os
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from app.models.entities import MagaluCredential
@@ -9,63 +8,16 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Configurações Magalu vindas de variáveis de ambiente para segurança
 MAGALU_CLIENT_ID = settings.MAGALU_CLIENT_ID
 MAGALU_CLIENT_SECRET = settings.MAGALU_CLIENT_SECRET
 MAGALU_TOKEN_URL = "https://id.magalu.com/oauth/token"
-MAGALU_BASE_URL = "https://api.magalu.com" # Base URL padrão para API Integra
-
-def exchange_code_for_magalu_tokens(db: Session, seller_id: str, code: str):
-    """
-    Troca o authorization code pelo primeiro par de tokens Access/Refresh.
-    Crucial para novas conexões ou quando o Refresh Token expira.
-    """
-    # O Redirect URI deve ser EXATAMENTE igual ao configurado no painel IDM da Magalu
-    redirect_uri = "https://bd-as-service-88534390451.us-central1.run.app/api/webhooks/magalu/callback"
-    
-    logger.info(f"🔑 Trocando código de autorização para o seller: {seller_id}")
-    
-    payload = {
-        'grant_type': 'authorization_code',
-        'client_id': MAGALU_CLIENT_ID,
-        'client_secret': MAGALU_CLIENT_SECRET,
-        'code': code,
-        'redirect_uri': redirect_uri
-    }
-    
-    try:
-        response = requests.post(MAGALU_TOKEN_URL, data=payload, timeout=15)
-        
-        if response.status_code == 200:
-            data = response.json()
-            
-            # Busca credencial existente ou cria uma nova
-            creds = db.query(MagaluCredential).filter(MagaluCredential.seller_id == seller_id).first()
-            if not creds:
-                creds = MagaluCredential(seller_id=seller_id)
-                db.add(creds)
-            
-            # Atualiza os dados
-            creds.access_token = data['access_token']
-            creds.refresh_token = data.get('refresh_token', creds.refresh_token)
-            
-            # Calcula expiração
-            expires_in = data.get('expires_in', 3600)
-            creds.expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-            
-            db.commit()
-            logger.info(f"✅ Conexão Magalu estabelecida com sucesso para {seller_id}")
-            return True
-        
-        logger.error(f"❌ Erro na troca de código Magalu ({response.status_code}): {response.text}")
-        return False
-        
-    except Exception as e:
-        logger.error(f"💥 Erro crítico ao trocar código Magalu: {e}")
-        return False
+MAGALU_BASE_URL = "https://api.magalu.com"
 
 def get_valid_magalu_access_token(db: Session, seller_id: str):
-    """Recupera ou renova o token OAuth da Magalu."""
+    """
+    Recupera ou renova o token OAuth da Magalu.
+    Lida com o fluxo de Organization (PJ).
+    """
     creds = db.query(MagaluCredential).filter(MagaluCredential.seller_id == seller_id).first()
     
     if not creds:
@@ -73,11 +25,11 @@ def get_valid_magalu_access_token(db: Session, seller_id: str):
 
     current_time = datetime.now(timezone.utc)
 
-    # Verifica se o token expirou (ou vai expirar em 5 minutos)
-    if creds.expires_at and current_time < (creds.expires_at - timedelta(minutes=5)):
+    # Se o token ainda é válido por mais de 5 minutos, retorna ele
+    if creds.expires_at and current_time < (creds.expires_at.replace(tzinfo=timezone.utc) - timedelta(minutes=5)):
         return creds.access_token
 
-    # Renovação do token (Refresh)
+    # Caso contrário, faz o REFRESH automático (A peça chave para o Cloud Run)
     logger.info(f"🔄 Renovando token Magalu para o seller {seller_id}...")
     
     payload = {
@@ -87,37 +39,45 @@ def get_valid_magalu_access_token(db: Session, seller_id: str):
         'refresh_token': creds.refresh_token
     }
     
-    response = requests.post(MAGALU_TOKEN_URL, data=payload)
-    
-    if response.status_code == 200:
-        data = response.json()
-        creds.access_token = data['access_token']
-        # Magalu às vezes rotaciona o refresh_token, se vier um novo, salvamos
-        creds.refresh_token = data.get('refresh_token', creds.refresh_token)
-        creds.expires_at = datetime.now(timezone.utc) + timedelta(seconds=data['expires_in'])
+    try:
+        response = requests.post(MAGALU_TOKEN_URL, data=payload, timeout=15)
         
-        db.commit()
-        return creds.access_token
-    else:
-        logger.error(f"❌ Erro ao renovar token Magalu: {response.text}")
-        raise Exception("Falha na renovação do token Magalu")
+        if response.status_code == 200:
+            data = response.json()
+            creds.access_token = data['access_token']
+            # Salva o novo refresh_token se a Magalu rotacionar
+            creds.refresh_token = data.get('refresh_token', creds.refresh_token)
+            creds.expires_at = datetime.now(timezone.utc) + timedelta(seconds=data['expires_in'])
+            
+            db.commit()
+            logger.info(f"✅ Token Magalu renovado com sucesso para {seller_id}")
+            return creds.access_token
+        else:
+            logger.error(f"❌ Erro ao renovar token Magalu: {response.text}")
+            raise Exception("Falha na renovação do token Magalu")
+    except Exception as e:
+        logger.error(f"💥 Falha técnica no refresh Magalu: {e}")
+        raise e
 
 def get_magalu_order_details(resource_uri: str, access_token: str, tenant_id: str):
     """
-    Busca os detalhes completos do pedido na API da Magalu.
-    Header X-Tenant-ID é obrigatório.
+    Busca os detalhes completos do pedido.
+    Implementa o header X-Tenant-Id validado no notebook para evitar erro 422.
     """
-    url = resource_uri if resource_uri.startswith("http") else f"{MAGALU_BASE_URL}{resource_uri}"
+    # Se resource_uri vier apenas como ID, montamos a URL
+    if not resource_uri.startswith("http") and not resource_uri.startswith("/"):
+        url = f"{MAGALU_BASE_URL}/seller/v1/orders/{resource_uri}"
+    else:
+        url = resource_uri if resource_uri.startswith("http") else f"{MAGALU_BASE_URL}{resource_uri}"
     
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "X-Tenant-ID": tenant_id,
-        "Accept": "application/json",
-        "Content-Type": "application/json"
+        "X-Tenant-Id": tenant_id, # Header crucial para Organization
+        "Accept": "application/json"
     }
     
     try:
-        logger.info(f"🔗 Consultando detalhes do pedido Magalu: {url} | Tenant: {tenant_id}")
+        logger.info(f"📡 Consultando Magalu: {url} | Tenant: {tenant_id}")
         response = requests.get(url, headers=headers, timeout=15)
         
         if response.status_code == 200:
