@@ -5,12 +5,13 @@ import os
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from app.models.entities import MagaluCredential
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 # Configurações Magalu vindas de variáveis de ambiente para segurança
-MAGALU_CLIENT_ID = os.getenv("MAGALU_CLIENT_ID")
-MAGALU_CLIENT_SECRET = os.getenv("MAGALU_CLIENT_SECRET")
+MAGALU_CLIENT_ID = settings.MAGALU_CLIENT_ID
+MAGALU_CLIENT_SECRET = settings.MAGALU_CLIENT_SECRET
 MAGALU_TOKEN_URL = "https://id.magalu.com/oauth/token"
 MAGALU_BASE_URL = "https://api.magalu.com" # Base URL padrão para API Integra
 
