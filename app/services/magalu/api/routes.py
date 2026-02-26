@@ -35,7 +35,7 @@ async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db
 
         logger.info(f"🔔 Notificação Magalu: Loja {tenant_id} | Tópico {topic}")
 
-        if topic == "created_order" and resource_path:
+        if topic in ["created_order", "orders_order"] and resource_path:
             # 3. Obtém credenciais e store_slug
             creds = db.query(MagaluCredential).filter(
                 (MagaluCredential.seller_id == tenant_id) | 
@@ -109,3 +109,28 @@ def test_magalu_auth(seller_id: str, db: Session = Depends(get_db)):
         return {"status": "success", "token_valido": True}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@router.get("/authorize/{seller_id}")
+async def authorize_magalu(seller_id: str):
+    """Gera a URL para o lojista clicar e autorizar a app."""
+    from app.services.magalu.utils import MAGALU_CLIENT_ID
+    # O Redirect URI deve ser EXATAMENTE igual ao configurado no IDM Magalu
+    redirect_uri = "https://bd-as-service-88534390451.us-central1.run.app/api/webhooks/magalu/callback"
+    auth_url = (
+        f"https://id.magalu.com/login/authorize?client_id={MAGALU_CLIENT_ID}"
+        f"&redirect_uri={redirect_uri}&response_type=code&state={seller_id}"
+    )
+    return {"auth_url": auth_url}
+
+@router.get("/callback")
+async def magalu_callback(code: str, state: str, db: Session = Depends(get_db)):
+    """Recebe o código da Magalu e gera o primeiro Refresh Token."""
+    from app.services.magalu.utils import exchange_code_for_magalu_tokens
+    
+    # O 'state' que enviamos no authorize volta aqui como o seller_id (tenant_id)
+    success = exchange_code_for_magalu_tokens(db, state, code)
+    
+    if success:
+        return {"status": "success", "message": f"Conexão com a loja {state} estabelecida!"}
+    else:
+        raise HTTPException(status_code=400, detail="Falha ao gerar tokens. Verifique os logs.")

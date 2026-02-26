@@ -14,6 +14,55 @@ MAGALU_CLIENT_SECRET = os.getenv("MAGALU_CLIENT_SECRET")
 MAGALU_TOKEN_URL = "https://id.magalu.com/oauth/token"
 MAGALU_BASE_URL = "https://api.magalu.com" # Base URL padrão para API Integra
 
+def exchange_code_for_magalu_tokens(db: Session, seller_id: str, code: str):
+    """
+    Troca o authorization code pelo primeiro par de tokens Access/Refresh.
+    Crucial para novas conexões ou quando o Refresh Token expira.
+    """
+    # O Redirect URI deve ser EXATAMENTE igual ao configurado no painel IDM da Magalu
+    redirect_uri = "https://bd-as-service-88534390451.us-central1.run.app/api/webhooks/magalu/callback"
+    
+    logger.info(f"🔑 Trocando código de autorização para o seller: {seller_id}")
+    
+    payload = {
+        'grant_type': 'authorization_code',
+        'client_id': MAGALU_CLIENT_ID,
+        'client_secret': MAGALU_CLIENT_SECRET,
+        'code': code,
+        'redirect_uri': redirect_uri
+    }
+    
+    try:
+        response = requests.post(MAGALU_TOKEN_URL, data=payload, timeout=15)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Busca credencial existente ou cria uma nova
+            creds = db.query(MagaluCredential).filter(MagaluCredential.seller_id == seller_id).first()
+            if not creds:
+                creds = MagaluCredential(seller_id=seller_id)
+                db.add(creds)
+            
+            # Atualiza os dados
+            creds.access_token = data['access_token']
+            creds.refresh_token = data.get('refresh_token', creds.refresh_token)
+            
+            # Calcula expiração
+            expires_in = data.get('expires_in', 3600)
+            creds.expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+            
+            db.commit()
+            logger.info(f"✅ Conexão Magalu estabelecida com sucesso para {seller_id}")
+            return True
+        
+        logger.error(f"❌ Erro na troca de código Magalu ({response.status_code}): {response.text}")
+        return False
+        
+    except Exception as e:
+        logger.error(f"💥 Erro crítico ao trocar código Magalu: {e}")
+        return False
+
 def get_valid_magalu_access_token(db: Session, seller_id: str):
     """Recupera ou renova o token OAuth da Magalu."""
     creds = db.query(MagaluCredential).filter(MagaluCredential.seller_id == seller_id).first()
@@ -42,6 +91,7 @@ def get_valid_magalu_access_token(db: Session, seller_id: str):
     if response.status_code == 200:
         data = response.json()
         creds.access_token = data['access_token']
+        # Magalu às vezes rotaciona o refresh_token, se vier um novo, salvamos
         creds.refresh_token = data.get('refresh_token', creds.refresh_token)
         creds.expires_at = datetime.now(timezone.utc) + timedelta(seconds=data['expires_in'])
         
@@ -54,13 +104,13 @@ def get_valid_magalu_access_token(db: Session, seller_id: str):
 def get_magalu_order_details(resource_uri: str, access_token: str, tenant_id: str):
     """
     Busca os detalhes completos do pedido na API da Magalu.
-    Adicionado o header X-Tenant-ID que é obrigatório para APIs Magalu/Integra.
+    Header X-Tenant-ID é obrigatório.
     """
     url = resource_uri if resource_uri.startswith("http") else f"{MAGALU_BASE_URL}{resource_uri}"
     
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "X-Tenant-ID": tenant_id,  # <--- CRÍTICO: Sem isso a consulta falha
+        "X-Tenant-ID": tenant_id,
         "Accept": "application/json",
         "Content-Type": "application/json"
     }
