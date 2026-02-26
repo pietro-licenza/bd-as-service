@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     CB_CLIENT_ID: Optional[str] = os.getenv("CB_CLIENT_ID")
     CB_ACCESS_TOKEN: Optional[str] = os.getenv("CB_ACCESS_TOKEN")
 
+    # Magalu (Vindo apenas das variáveis de ambiente)
+    MAGALU_CLIENT_ID: Optional[str] = os.getenv("MAGALU_CLIENT_ID")
+    MAGALU_CLIENT_SECRET: Optional[str] = os.getenv("MAGALU_CLIENT_SECRET")
+
+
     # --- SEGURANÇA E BANCO DE DADOS ---
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", "")
     SECRET_KEY: str = os.getenv("SECRET_KEY", "uma_chave_muito_secreta_e_longa_para_seguranca")
