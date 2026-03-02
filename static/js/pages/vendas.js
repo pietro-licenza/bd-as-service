@@ -38,22 +38,30 @@ const VendasTemplate = () => {
         </div>
     </div>
 
-    <div class="filters-bar" style="display: flex; gap: 15px; background: rgba(59, 130, 246, 0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(59, 130, 246, 0.2); margin-bottom: 1.5rem; align-items: center;">
-        <div class="filter-group" style="flex: 1;">
-            <small style="color: #3b82f6; display: block; margin-bottom: 4px; font-weight: 600;">Filtrar Marketplace</small>
-            <select id="filter-marketplace" onchange="initVendasPage()" style="width: 100%; background: #1a1c1e; color: white; border: 1px solid #333; padding: 8px; border-radius: 6px;">
-                <option value="all">Todos os Canais</option>
-                <option value="mercadolivre">Mercado Livre</option>
-                <option value="magalu">Magalu</option>
-            </select>
+    <div class="filters-bar" style="display: flex; gap: 15px; background: #1a1c1e; padding: 15px; border-radius: 12px; border: 1px solid #333; margin-bottom: 1.5rem; align-items: center; font-family: inherit; flex-wrap: wrap;">
+        <div class="filter-group" style="flex: 1; min-width: 300px;">
+            <small style="color: #3b82f6; display: block; margin-bottom: 8px; font-weight: 600;">Filtrar Marketplace</small>
+            <div id="marketplace-buttons" style="display: flex; gap: 10px;">
+                <button type="button" class="mkt-btn active" data-mkt="all" id="btn-mkt-all" style="background: #111; border: 2px solid #2ecc71; border-radius: 8px; padding: 6px 16px; cursor: pointer; display: flex; align-items: center; gap: 6px; color: #fff; font-family: inherit; font-weight: 700; transition: all 0.3s; box-shadow: 0 0 10px rgba(46, 204, 113, 0.4);">
+                    <span style="color: #fff; font-weight: 700;">Todos</span>
+                </button>
+                <button type="button" class="mkt-btn" data-mkt="mercadolivre" style="background: #222; border: 2px solid #333; border-radius: 8px; padding: 6px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px; color: #fff; font-family: inherit; font-weight: 700; transition: all 0.3s;">
+                    <img src="static/img/mercadolivre_logo.png" alt="ML" style="height: 20px;">
+                    <span style="color: #fff159;">Mercado Livre</span>
+                </button>
+                <button type="button" class="mkt-btn" data-mkt="magalu" style="background: #222; border: 2px solid #333; border-radius: 8px; padding: 6px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px; color: #fff; font-family: inherit; font-weight: 700; transition: all 0.3s;">
+                    <img src="static/img/magalu_logo.png" alt="Magalu" style="height: 20px;">
+                    <span style="color: #3b82f6;">Magalu</span>
+                </button>
+            </div>
         </div>
         <div class="filter-group">
             <small style="color: #888; display: block; margin-bottom: 4px;">De:</small>
-            <input type="date" id="filter-start-date" onchange="initVendasPage()" style="background: #1a1c1e; color: white; border: 1px solid #333; padding: 8px; border-radius: 6px;">
+            <input type="date" id="filter-start-date" onchange="initVendasPage()" style="background: #0d0e10; color: white; border: 1px solid #333; padding: 8px; border-radius: 8px; outline: none;">
         </div>
         <div class="filter-group">
             <small style="color: #888; display: block; margin-bottom: 4px;">Até:</small>
-            <input type="date" id="filter-end-date" onchange="initVendasPage()" style="background: #1a1c1e; color: white; border: 1px solid #333; padding: 8px; border-radius: 6px;">
+            <input type="date" id="filter-end-date" onchange="initVendasPage()" style="background: #0d0e10; color: white; border: 1px solid #333; padding: 8px; border-radius: 8px; outline: none;">
         </div>
     </div>
 
@@ -94,6 +102,38 @@ let allOrders = [];
 let salesChart = null;
 let currentPage = 1;
 const ordersPerPage = 10;
+let selectedMarketplace = 'all';
+
+function setupMarketplaceButtons() {
+    const mktBtns = document.querySelectorAll('.mkt-btn');
+    if (!mktBtns.length) return;
+
+    mktBtns.forEach(btn => {
+        btn.onclick = function(e) {
+            e.preventDefault();
+            selectedMarketplace = this.getAttribute('data-mkt');
+            
+            mktBtns.forEach(b => {
+                b.style.background = '#222';
+                b.style.border = '2px solid #333';
+                b.style.boxShadow = 'none';
+            });
+
+            // Lógica de cores: Verde para Todos, Amarelo para ML, Azul para Magalu
+            let activeColor = '#3b82f6'; // Fallback Azul
+            if (selectedMarketplace === 'all') activeColor = '#2ecc71'; // VERDE
+            else if (selectedMarketplace === 'mercadolivre') activeColor = '#fff159'; // AMARELO
+            else if (selectedMarketplace === 'magalu') activeColor = '#0086ff'; // AZUL
+
+            this.style.background = '#111';
+            this.style.border = `2px solid ${activeColor}`;
+            this.style.boxShadow = `0 0 12px ${activeColor}66`;
+            
+            currentPage = 1;
+            initVendasPage();
+        };
+    });
+}
 
 async function initVendasPage() {
     const container = document.getElementById('vendas-container');
@@ -101,6 +141,8 @@ async function initVendasPage() {
     const gCan = document.getElementById('global-cancelado'), gCnt = document.getElementById('global-total-count');
     const fVol = document.getElementById('filtered-total-volume'), fFat = document.getElementById('filtered-faturado');
     const fCan = document.getElementById('filtered-cancelado'), fCnt = document.getElementById('filtered-total-count');
+
+    setupMarketplaceButtons();
 
     try {
         if (allOrders.length === 0) {
@@ -110,7 +152,7 @@ async function initVendasPage() {
             allOrders = await res.json();
         }
 
-        const mkt = document.getElementById('filter-marketplace').value;
+        const mkt = selectedMarketplace;
         const start = document.getElementById('filter-start-date').value;
         const end = document.getElementById('filter-end-date').value;
 
@@ -126,10 +168,10 @@ async function initVendasPage() {
             if (['cancelled', 'refunded', 'returned'].includes(o.status)) gC += o.total_amount;
         });
 
-        gVol.textContent = gV.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        gFat.textContent = gF.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        gCan.textContent = gC.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        gCnt.textContent = `${globalSet.length} pedidos realizados`;
+        if(gVol) gVol.textContent = gV.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        if(gFat) gFat.textContent = gF.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        if(gCan) gCan.textContent = gC.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        if(gCnt) gCnt.textContent = `${globalSet.length} pedidos realizados`;
 
         const filteredSet = globalSet.filter(o => mkt === 'all' || o.marketplace === mkt);
         let fV = 0, fF = 0, fC = 0;
@@ -139,19 +181,23 @@ async function initVendasPage() {
             if (['cancelled', 'refunded', 'returned'].includes(o.status)) fC += o.total_amount;
         });
 
-        fVol.textContent = fV.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        fFat.textContent = fF.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        fCan.textContent = fC.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        fCnt.textContent = `${filteredSet.length} pedidos no canal`;
+        if(fVol) fVol.textContent = fV.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        if(fFat) fFat.textContent = fF.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        if(fCan) fCan.textContent = fC.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        if(fCnt) fCnt.textContent = `${filteredSet.length} pedidos no canal`;
 
         updateSalesChart(filteredSet);
         renderOrdersList(filteredSet);
-    } catch (e) { container.innerHTML = `<p style="color:red">Erro: ${e.message}</p>`; }
+    } catch (e) { 
+        if(container) container.innerHTML = `<p style="color:red">Erro ao carregar dados: ${e.message}</p>`; 
+    }
 }
 
 function renderOrdersList(orders) {
     const container = document.getElementById('vendas-container');
     const pagEl = document.getElementById('pagination-controls');
+    if (!container) return;
+
     const start = (currentPage - 1) * ordersPerPage;
     const paginated = orders.slice(start, start + ordersPerPage);
     const totalPages = Math.ceil(orders.length / ordersPerPage);
@@ -159,32 +205,25 @@ function renderOrdersList(orders) {
     container.innerHTML = paginated.map(order => {
         const data = order.raw_data || {};
         let brandColor = order.marketplace === 'mercadolivre' ? '#fff159' : (order.marketplace === 'magalu' ? '#0086ff' : '#3b82f6');
-        
-        // Normalização de Cores de Status (Incluindo os novos status normalizados)
         const statusColor = ['paid', 'approved', 'shipped'].includes(order.status) ? '#2ecc71' : (['cancelled', 'refunded', 'returned'].includes(order.status) ? '#e74c3c' : '#f1c40f');
         
         let productName = "Produto não identificado";
         let qty = 0;
 
-        // --- LÓGICA DE EXTRAÇÃO POR MARKETPLACE ---
         if (order.marketplace === 'mercadolivre') {
             const items = data.order_items || [];
             productName = items.length > 0 ? items[0].item.title : "Venda ML";
             qty = items.reduce((acc, i) => acc + (i.quantity || 0), 0);
         } 
         else if (order.marketplace === 'magalu') {
-            // Na Magalu, os itens estão dentro de 'deliveries'
             const deliveries = data.deliveries || [];
             if (deliveries.length > 0 && deliveries[0].items && deliveries[0].items.length > 0) {
-                const firstItem = deliveries[0].items[0];
-                productName = firstItem.info?.name || "Venda Magalu";
-                // Soma a quantidade de todos os itens em todas as entregas
-                qty = deliveries.reduce((total, del) => {
-                    return total + (del.items || []).reduce((sum, i) => sum + (i.quantity || 0), 0);
-                }, 0);
+                const items = deliveries[0].items;
+                productName = items[0].info?.name || "Venda Magalu";
+                qty = items.reduce((acc, i) => acc + (i.quantity || 0), 0);
             } else {
                 productName = "Venda Magalu";
-                qty = 1; // Fallback caso não encontre a estrutura
+                qty = 1;
             }
         }
 
@@ -192,7 +231,11 @@ function renderOrdersList(orders) {
         <div class="order-item" style="background: #0d0e10; border: 1px solid #222; border-left: 4px solid ${brandColor}; margin-bottom: 1rem; padding: 18px; border-radius: 8px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                 <div>
-                    <span style="font-size: 0.6rem; color: ${brandColor}; font-weight: 800; letter-spacing: 1px;">${order.marketplace.toUpperCase()}</span>
+                    <span style="font-size: 0.6rem; color: ${brandColor}; font-weight: 800; letter-spacing: 1px; display: flex; align-items: center; gap: 6px;">
+                        ${order.marketplace === 'mercadolivre' ? `<img src="static/img/mercadolivre_logo.png" style="height: 16px;">` : ''}
+                        ${order.marketplace === 'magalu' ? `<img src="static/img/magalu_logo.png" style="height: 16px;">` : ''}
+                        ${order.marketplace.toUpperCase()}
+                    </span>
                     <h4 style="color: #fff; margin: 2px 0; font-size: 1rem;">Pedido #${order.external_id}</h4>
                 </div>
                 <span style="background: ${statusColor}; color: #000; padding: 4px 12px; border-radius: 6px; font-size: 0.7rem; font-weight: 800; white-space: nowrap; min-width: 80px; text-align: center;">
@@ -209,23 +252,22 @@ function renderOrdersList(orders) {
                 <span style="color: #2ecc71; font-weight: 700; font-size: 1rem;">${order.total_amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                 <span style="color: #666; font-size: 0.8rem;">📅 ${new Date(order.created_at).toLocaleDateString('pt-BR')}</span>
             </div>
-
-            <details style="margin-top: 12px;">
-                <summary style="font-size: 0.75rem; color: #444; cursor: pointer; user-select: none; font-weight: 600;">ver detalhes técnicos (JSON)</summary>
-                <pre style="background: #000; color: #0fa; padding: 12px; border-radius: 6px; font-size: 0.7rem; margin-top: 8px; overflow-x: auto; border: 1px solid #111;">${JSON.stringify(data, null, 2)}</pre>
-            </details>
         </div>`;
     }).join('');
 
-    pagEl.innerHTML = totalPages > 1 ? `
-        <button onclick="changePage(${currentPage-1})" ${currentPage==1?'disabled':''} style="background:#222; color:#fff; border:none; padding:5px 12px; border-radius:4px; cursor:pointer;">Ant</button>
-        <span style="color:#888; font-size:0.8rem;">${currentPage} / ${totalPages}</span>
-        <button onclick="changePage(${currentPage+1})" ${currentPage==totalPages?'disabled':''} style="background:#222; color:#fff; border:none; padding:5px 12px; border-radius:4px; cursor:pointer;">Próx</button>
-    ` : '';
+    if(pagEl) {
+        pagEl.innerHTML = totalPages > 1 ? `
+            <button onclick="changePage(${currentPage-1})" ${currentPage===1?'disabled':''} style="background:#222; color:#fff; border:none; padding:5px 12px; border-radius:4px; cursor:pointer;">Ant</button>
+            <span style="color:#888; font-size:0.8rem;">${currentPage} / ${totalPages}</span>
+            <button onclick="changePage(${currentPage+1})" ${currentPage===totalPages?'disabled':''} style="background:#222; color:#fff; border:none; padding:5px 12px; border-radius:4px; cursor:pointer;">Próx</button>
+        ` : '';
+    }
 }
 
 function updateSalesChart(orders) {
-    const ctx = document.getElementById('salesChart').getContext('2d');
+    const canvas = document.getElementById('salesChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
     const daily = {};
     orders.forEach(o => {
         const d = new Date(o.created_at).toLocaleDateString('pt-BR');

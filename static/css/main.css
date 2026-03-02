@@ -822,3 +822,15 @@ input[type="file"] {
         padding: 1.25rem;
     }
 }
+
+/* Ajustes para o Popup do Calendário */
+.flatpickr-calendar.dark {
+    background: #1a1c1e !important;
+    border: 1px solid #333 !important;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5) !important;
+}
+
+.flatpickr-day.selected {
+    background: #3b82f6 !important;
+    border-color: #3b82f6 !important;
+}
