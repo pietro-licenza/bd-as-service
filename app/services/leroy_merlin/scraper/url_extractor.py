@@ -469,6 +469,45 @@ def extract_title_from_html(html: str) -> Optional[str]:
     return None
 
 
+def extract_model_from_html(html: str) -> Optional[str]:
+    """
+    Extrai o modelo do produto do HTML da Leroy Merlin.
+    Procura por 'Modelo' na tabela de especificações (JSON embutido ou HTML), semelhante à extração da marca.
+    """
+    # Estratégia 1: Buscar na tabela de especificações técnica (Visual/HTML)
+    # Procura por um texto que contenha "Modelo" e tenta pegar o próximo valor
+    import bs4
+    soup = bs4.BeautifulSoup(html, 'html.parser')
+    label = soup.find(text=re.compile(r'^Modelo$', re.IGNORECASE))
+    if label:
+        try:
+            value = label.find_parent().find_next_sibling() or label.find_parent('tr').find_all('td')[-1]
+            if value:
+                model_found = value.get_text(strip=True)
+                if model_found:
+                    logger.info(f"✅ Modelo found (pattern 1): {model_found}")
+                    return model_found
+        except Exception:
+            pass
+
+    # Estratégia 2: Regex flexível no bloco JSON/Next.js State
+    match = re.search(r'["\']Modelo["\']\s*:\s*["\']([^"\']+)["\']', html, re.IGNORECASE)
+    if match:
+        model_found = match.group(1).strip()
+        logger.info(f"✅ Modelo found (pattern 2): {model_found}")
+        return model_found
+
+    # Estratégia 3: Busca no objeto de características (characteristics)
+    match_carac = re.search(r'"characteristics"\s*:\s*\[(.*?)\]', html, re.DOTALL)
+    if match_carac:
+        carac_block = match_carac.group(1)
+        match_modelo = re.search(r'\{"name"\s*:\s*"Modelo"\s*,\s*"value"\s*:\s*"([^"]+)"\}', carac_block)
+        if match_modelo:
+            return match_modelo.group(1)
+
+    return None
+
+
 def extract_product_data(product_url: str) -> Dict[str, any]:
     """
     Extract complete product data (title, prices, images, brand, EAN) from a Leroy Merlin URL.
@@ -512,6 +551,7 @@ def extract_product_data(product_url: str) -> Dict[str, any]:
         preco = extract_price_from_html(html)
         marca = extract_brand_from_html(html)
         ean = extract_ean_from_html(html)
+        modelo = extract_model_from_html(html)
         
         # Extract images using the improved extractor (single point of truth)
         logger.info("🔍 Extracting images using improved extractor...")
@@ -525,6 +565,7 @@ def extract_product_data(product_url: str) -> Dict[str, any]:
             "preco": preco or "",
             "marca": marca,
             "ean": ean,
+            "modelo": modelo,
             "image_urls": image_urls,
             "success": bool(titulo and preco),
         }
@@ -543,10 +584,12 @@ def extract_product_data(product_url: str) -> Dict[str, any]:
             "preco": "",
             "marca": "Marca não encontrada",
             "ean": "EAN não encontrado",
+            "modelo": "Modelo não encontrado",
             "image_urls": [],
             "success": False,
             "error": str(e)
         }
+
     except Exception as e:
         logger.error(f"❌ Unexpected error: {e}", exc_info=True)
         return {

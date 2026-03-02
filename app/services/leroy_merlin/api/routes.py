@@ -87,6 +87,7 @@ async def process_product_urls(
                 titulo=titulo,
                 preco=p_info.get("preco", ""),
                 marca=p_info.get("marca", ""),
+                modelo=p_info.get("modelo", ""),
                 ean=p_info.get("ean", ""),
                 descricao=gemini_res.get("descricao", ""),
                 image_urls=p_info.get("image_urls", []),

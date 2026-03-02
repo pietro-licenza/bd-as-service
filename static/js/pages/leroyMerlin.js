@@ -179,9 +179,10 @@ function initLeroyMerlinPage() {
                             <h3 style="margin:0; color:var(--text-primary);">✅ ${p.titulo}</h3>
                             <span class="badge" style="background:rgba(59,130,246,0.1); color:#3b82f6;">Investimento: ${formatBRL(p.total_cost_brl)}</span>
                         </div>
-                        <div style="margin-top:0.7rem; display:flex; align-items:center; gap:18px; background:rgba(30,30,30,0.18); border-radius:8px; padding:8px 18px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+                        <div style="margin-top:0.7rem; display:flex; flex-direction:column; gap:6px; background:rgba(30,30,30,0.18); border-radius:8px; padding:8px 18px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
                             <span style="font-size:1.3rem; color:var(--success-color); font-weight:700; letter-spacing:0.5px;">Marca: ${p.marca}</span>
-                            <label style="display:flex; align-items:center; gap:12px; font-size:1.2rem; color:#3b82f6; font-weight:600;">
+                            <span style="font-size:1.3rem; color:var(--success-color); font-weight:700; letter-spacing:0.5px;">Modelo: ${p.modelo}</span>
+                            <label style="display:flex; align-items:center; gap:12px; font-size:1.2rem; color:#3b82f6; font-weight:600; margin-top:6px;">
                                 <input type="checkbox" class="alterar-marca-checkbox" data-url="${p.url_original}" style="width:28px; height:28px; border-radius:8px; box-shadow:0 1px 6px rgba(59,130,246,0.15); accent-color:#3b82f6;" />
                                 <span style="font-size:1.2rem;">Alterar Marca</span>
                             </label>

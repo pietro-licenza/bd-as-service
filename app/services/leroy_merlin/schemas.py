@@ -25,6 +25,7 @@ class ProductData(BaseModel):
     titulo: Optional[str] = None
     preco: Optional[str] = None
     marca: Optional[str] = None
+    modelo: Optional[str] = None
     ean: Optional[str] = None
     descricao: Optional[str] = None
     image_urls: List[str] = []
