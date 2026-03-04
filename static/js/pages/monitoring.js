@@ -1,6 +1,6 @@
 /**
  * static/js/pages/monitoring.js
- * Módulo de Monitoramento de Estoque - Versão Analítica com Paginação
+ * Módulo de Monitoramento de Estoque - Versão Multi-Marketplace
  */
 
 // Estado local da página para controle de paginação
@@ -14,15 +14,23 @@ let monitoringState = {
 const MonitoringConfigTemplate = () => `
     <div class="page-header">
         <h1>⚙️ Configurações de Monitoramento</h1>
-        <p>Gerencie os termos de busca para monitoramento automático na Leroy Merlin.</p>
+        <p>Gerencie quais termos e lojas o robô deve monitorar automaticamente.</p>
     </div>
 
     <div class="upload-section">
-        <h2>Cadastrar Novo Termo</h2>
-        <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+        <h2>Cadastrar Novo Monitoramento</h2>
+        <div style="display: grid; grid-template-columns: 2fr 1fr auto; gap: 1rem; margin-top: 1rem;">
             <input type="text" id="newTermInput" placeholder="Ex: gazebo articulado" 
-                   style="flex: 1; padding: 0.8rem; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; outline: none;">
-            <button class="btn btn-add" id="addTermBtn" style="padding: 0 2rem;">
+                   style="padding: 0.8rem; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; outline: none;">
+            
+            <select id="newMarketplaceSelect" style="padding: 0.8rem; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; outline: none; cursor: pointer;">
+                <option value="leroy_merlin">Leroy Merlin</option>
+                <option value="sodimac">Sodimac</option>
+                <option value="decathlon">Decathlon</option>
+                <option value="sams_club">Sam's Club</option>
+            </select>
+
+            <button class="btn btn-add" id="addTermBtn" style="padding: 0 2rem; height: 100%;">
                 <span>➕</span> Adicionar
             </button>
         </div>
@@ -30,9 +38,9 @@ const MonitoringConfigTemplate = () => `
 
     <div class="results-section">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-            <h2>📋 Termos Monitorados</h2>
+            <h2>📋 Termos e Lojas Ativas</h2>
             <button class="btn btn-primary" id="syncNowBtn" style="background: #10b981; border-color: #10b981;">
-                <span>🔄</span> Sincronizar Agora
+                <span>🔄</span> Sincronizar Tudo Agora
             </button>
         </div>
         <div class="bg-secondary rounded-xl overflow-hidden border border-white/10">
@@ -40,6 +48,7 @@ const MonitoringConfigTemplate = () => `
                 <thead style="background: rgba(255,255,255,0.05); color: var(--text-secondary); font-size: 0.75rem; text-transform: uppercase;">
                     <tr>
                         <th style="padding: 1rem;">Termo</th>
+                        <th style="padding: 1rem;">Marketplace</th>
                         <th style="padding: 1rem;">Status</th>
                         <th style="padding: 1rem;">Última Varredura</th>
                         <th style="padding: 1rem; text-align: right;">Ações</th>
@@ -60,7 +69,7 @@ const MonitoringDashboardTemplate = () => `
         </div>
         <div style="min-width: 250px;">
             <select id="termSelector" style="width: 100%; padding: 10px; background: #1e293b; color: white; border: 1px solid #334155; border-radius: 8px; outline: none;">
-                <option value="">Carregando termos...</option>
+                <option value="">Escolha um monitoramento...</option>
             </select>
         </div>
     </div>
@@ -100,7 +109,8 @@ const MonitoringDashboardTemplate = () => `
 
 async function initMonitoringConfigPage() {
     const btnAdd = document.getElementById('addTermBtn');
-    const input = document.getElementById('newTermInput');
+    const inputTerm = document.getElementById('newTermInput');
+    const selectMarket = document.getElementById('newMarketplaceSelect');
     const btnSync = document.getElementById('syncNowBtn');
     const token = localStorage.getItem('access_token');
 
@@ -110,9 +120,19 @@ async function initMonitoringConfigPage() {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const tbody = document.getElementById('termsListBody');
-            tbody.innerHTML = res.data.map(t => `
+            
+            tbody.innerHTML = res.data.map(t => {
+                // Formata o nome do marketplace para exibição
+                const marketName = t.marketplace.replace('_', ' ').toUpperCase();
+                
+                return `
                 <tr style="border-top: 1px solid rgba(255,255,255,0.05);">
                     <td style="padding: 1rem; font-weight: 600;">${t.term}</td>
+                    <td style="padding: 1rem;">
+                        <span style="font-size: 0.7rem; background: rgba(59, 130, 246, 0.1); color: #3b82f6; padding: 4px 8px; border-radius: 4px; font-weight: bold;">
+                            🏛️ ${marketName}
+                        </span>
+                    </td>
                     <td style="padding: 1rem;"><span style="color: #10b981;">● Ativo</span></td>
                     <td style="padding: 1rem; color: #888;">
                         ${t.last_run ? new Date(t.last_run).toLocaleString('pt-BR') : 'Aguardando sync'}
@@ -121,18 +141,23 @@ async function initMonitoringConfigPage() {
                         <button onclick="deleteMonTerm(${t.id})" class="remove-btn" style="padding: 5px 10px; cursor:pointer;">🗑️</button>
                     </td>
                 </tr>
-            `).join('');
+            `}).join('');
         } catch (err) { console.error(err); }
     };
 
     btnAdd.onclick = async () => {
-        const term = input.value.trim();
+        const term = inputTerm.value.trim();
+        const marketplace = selectMarket.value;
         if (!term) return;
+        
         try {
-            await axios.post('/api/monitoring/terms', { term: term, marketplace: 'leroy_merlin' }, { headers: { 'Authorization': `Bearer ${token}` } });
-            input.value = '';
+            await axios.post('/api/monitoring/terms', 
+                { term: term, marketplace: marketplace }, 
+                { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+            inputTerm.value = '';
             loadTerms();
-        } catch (err) { alert("Erro ao adicionar termo."); }
+        } catch (err) { alert("Erro ao adicionar monitoramento."); }
     };
 
     btnSync.onclick = async () => {
@@ -140,12 +165,12 @@ async function initMonitoringConfigPage() {
         btnSync.innerHTML = '<span>⏳</span> Sincronizando...';
         try {
             await axios.post('/api/monitoring/sync', {}, { headers: { 'Authorization': `Bearer ${token}` } });
-            alert("Sincronização concluída!");
+            alert("Sincronização de todos os marketplaces concluída!");
             loadTerms();
         } catch (err) { alert("Erro na sincronização."); }
         finally {
             btnSync.disabled = false;
-            btnSync.innerHTML = '<span>🔄</span> Sincronizar Agora';
+            btnSync.innerHTML = '<span>🔄</span> Sincronizar Tudo Agora';
         }
     };
 
@@ -164,8 +189,11 @@ async function initMonitoringDashboardPage() {
 
     try {
         const termsRes = await axios.get('/api/monitoring/terms', { headers: { 'Authorization': `Bearer ${token}` } });
-        selector.innerHTML = '<option value="">Escolha um termo para analisar...</option>' + 
-            termsRes.data.map(t => `<option value="${t.id}">${t.term.toUpperCase()}</option>`).join('');
+        selector.innerHTML = '<option value="">Escolha um monitoramento...</option>' + 
+            termsRes.data.map(t => {
+                const marketLabel = t.marketplace.replace('_', ' ').toUpperCase();
+                return `<option value="${t.id}">${t.term.toUpperCase()} (${marketLabel})</option>`;
+            }).join('');
     } catch (err) { console.error(err); }
 
     selector.onchange = async () => {
@@ -178,7 +206,6 @@ async function initMonitoringDashboardPage() {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             
-            // Armazena no estado para paginação
             monitoringState.allProducts = res.data.products;
             monitoringState.currentPage = 1;
             
@@ -258,14 +285,13 @@ function renderMonitoringTable() {
                 </td>
                 <td style="padding: 1rem 1.5rem; text-align: right;">
                     <a href="${p.url}" target="_blank" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.75rem; background: #334155;">
-                        <span>🔗</span> Abrir Leroy
+                        <span>🔗</span> Abrir Loja
                     </a>
                 </td>
             </tr>
         `;
     }).join('');
 
-    // Renderiza controles de página
     pagination.innerHTML = `
         <button onclick="changeMonPage(${monitoringState.currentPage - 1})" 
                 ${monitoringState.currentPage === 1 ? 'disabled' : ''} 
@@ -281,7 +307,6 @@ function renderMonitoringTable() {
     `;
 }
 
-// Função global para troca de página
 window.changeMonPage = (newPage) => {
     const totalPages = Math.ceil(monitoringState.allProducts.length / monitoringState.itemsPerPage);
     if (newPage < 1 || newPage > totalPages) return;

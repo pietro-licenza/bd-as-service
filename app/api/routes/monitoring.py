@@ -3,17 +3,27 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List
-from datetime import datetime, timedelta
+import logging
 
 from app.core.database import get_db
 from app.models.entities import MonitoringTerm, MonitoredProduct, StockHistory, User
 from app.models.schemas import MonitoringTermCreate, MonitoringTermResponse
 from app.api.auth import get_current_user
 
-# Serviço de monitoramento de estoque da Leroy Merlin
+# Serviços de monitoramento
 from app.services.leroy_merlin.scraper.monitoring_service import LeroyMonitoringService
+# Nota: Quando criar os serviços de Sodimac/Decathlon, importe-os aqui.
 
 router = APIRouter(tags=["Monitoring"])
+logger = logging.getLogger(__name__)
+
+# Mapeamento de Marketplaces -> Serviços
+# Facilita a expansão: basta adicionar a nova loja aqui quando o serviço estiver pronto.
+MONITORING_SERVICES = {
+    "leroy_merlin": LeroyMonitoringService,
+    # "sodimac": SodimacMonitoringService, 
+    # "decathlon": DecathlonMonitoringService,
+}
 
 # --- ROTAS DE GESTÃO DE TERMOS ---
 
@@ -30,7 +40,7 @@ def create_monitoring_term(
     ).first()
     
     if existing:
-        raise HTTPException(status_code=400, detail="Este termo já está sendo monitorado.")
+        raise HTTPException(status_code=400, detail="Este termo já está sendo monitorado para esta loja.")
 
     new_term = MonitoringTerm(**term_in.model_dump())
     db.add(new_term)
@@ -72,14 +82,35 @@ def trigger_monitoring_sync(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Dispara manualmente a varredura de estoque."""
+    """
+    Orquestrador Global: Dispara a varredura para todos os 
+    marketplaces que possuem termos ativos cadastrados.
+    """
     try:
-        processed_count = LeroyMonitoringService.run_sync(db)
+        # Busca marketplaces que possuem pelo menos um termo ativo
+        active_markets = db.query(MonitoringTerm.marketplace).filter(
+            MonitoringTerm.is_active == True
+        ).distinct().all()
+
+        total_processed = 0
+        executed_markets = []
+
+        for (market_name,) in active_markets:
+            service = MONITORING_SERVICES.get(market_name)
+            if service:
+                logger.info(f"🔄 Iniciando sincronização manual para: {market_name}")
+                count = service.run_sync(db)
+                total_processed += count
+                executed_markets.append(market_name)
+            else:
+                logger.warning(f"⚠️ Serviço não implementado para o marketplace: {market_name}")
+
         return {
             "status": "success",
-            "message": f"Sincronização concluída. {processed_count} registros salvos."
+            "message": f"Sincronização concluída para {executed_markets}. {total_processed} registros salvos."
         }
     except Exception as e:
+        logger.error(f"❌ Erro na sincronização global: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro na sincronização: {str(e)}")
 
 @router.get("/dashboard-data/{term_id}")
@@ -88,18 +119,11 @@ def get_dashboard_data(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Retorna dados mastigados para o Front-end:
-    - Summary (Cards)
-    - Products List (Grid Interativo)
-    """
-    # 1. Busca o termo alvo
+    """Retorna dados processados (vendas e estoque) para o dashboard."""
     term_obj = db.query(MonitoringTerm).filter(MonitoringTerm.id == term_id).first()
     if not term_obj:
         raise HTTPException(status_code=404, detail="Termo não encontrado")
 
-    # 2. Busca todos os produtos vinculados a esse marketplace e termo
-    # Usamos o nome do produto para filtrar o que pertence a esse termo
     products = db.query(MonitoredProduct).filter(
         MonitoredProduct.marketplace == term_obj.marketplace,
         MonitoredProduct.name.ilike(f"%{term_obj.term}%")
@@ -111,7 +135,6 @@ def get_dashboard_data(
     top_mover = {"name": "Nenhum", "delta": 0}
 
     for p in products:
-        # Pega as duas últimas leituras de estoque
         history = db.query(StockHistory).filter(
             StockHistory.product_internal_id == p.id
         ).order_by(StockHistory.recorded_at.desc()).limit(2).all()
@@ -122,12 +145,9 @@ def get_dashboard_data(
         latest = history[0]
         previous = history[1] if len(history) > 1 else latest
         
-        # Cálculo de Venda (Delta)
-        # Se o estoque anterior era maior que o atual, houve "venda"
         delta = previous.stock_count - latest.stock_count
         delta = delta if delta > 0 else 0
         
-        # Acumuladores para os Cards
         total_estimated_sales += delta
         if latest.stock_count == 0:
             out_of_stock_count += 1
@@ -135,7 +155,6 @@ def get_dashboard_data(
         if delta > top_mover["delta"]:
             top_mover = {"name": p.name, "delta": delta}
 
-        # Status Simplificado para o Front
         status = "disponivel"
         if latest.stock_count == 0:
             status = "esgotado"
@@ -155,12 +174,12 @@ def get_dashboard_data(
             "last_sync": latest.recorded_at
         })
 
-    # Ordena o Grid por quem mais "vendeu" (maior delta)
     grid_data = sorted(grid_data, key=lambda x: x['delta'], reverse=True)
 
     return {
         "summary": {
             "term": term_obj.term,
+            "marketplace": term_obj.marketplace,
             "total_products": len(products),
             "estimated_sales_24h": total_estimated_sales,
             "out_of_stock_count": out_of_stock_count,
