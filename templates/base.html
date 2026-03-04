@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="/static/css/main.css">
     
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     
     {% block extra_css %}{% endblock %}
 </head>
@@ -65,11 +66,32 @@
             </div>
 
             <div class="nav-section">
-                <div class="nav-section-title">Monitoramento</div>
+                <div class="nav-section-title">Monitoramento de Estoque</div>
+                <div class="nav-item">
+                    <a class="nav-link" id="nav-monitoring-parent" style="cursor: pointer;">
+                        <span class="nav-icon">🛡️</span>
+                        <span class="nav-text">Monitoramento</span>
+                        <span class="nav-arrow">▶</span>
+                    </a>
+                    <div class="nav-submenu">
+                        <a href="#/monitoramento/dashboard" class="nav-subitem" id="nav-mon-dashboard">
+                            <span>📈</span>
+                            <span>Dashboard</span>
+                        </a>
+                        <a href="#/monitoramento/config" class="nav-subitem" id="nav-mon-config">
+                            <span>⚙️</span>
+                            <span>Configurações</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-section-title">Relatórios</div>
                 <div class="nav-item">
                     <a class="nav-link" id="nav-dashboards-parent">
                         <span class="nav-icon">📈</span>
-                        <span class="nav-text">Dashboards</span>
+                        <span class="nav-text">Dashboards IA</span>
                         <span class="nav-arrow">▶</span>
                     </a>
                     <div class="nav-submenu">
@@ -86,7 +108,7 @@
             </div>
 
             <div class="nav-section">
-                <div class="nav-section-title">Configurações</div>
+                <div class="nav-section-title">Sistema</div>
                 <div class="nav-item">
                     <a class="nav-link" id="nav-settings">
                         <span class="nav-icon">⚙️</span>
@@ -128,7 +150,9 @@
     <script src="/static/js/pages/sodimac.js"></script>
     <script src="/static/js/pages/decathlon.js"></script>
     <script src="/static/js/pages/dashboard.js"></script>
-    <script src="/static/js/pages/vendas.js"></script> <script src="/static/js/app.js"></script>
+    <script src="/static/js/pages/vendas.js"></script>
+    <script src="/static/js/pages/monitoring.js"></script>
+    <script src="/static/js/app.js"></script>
     
     <script>
     document.addEventListener('DOMContentLoaded', function() {
@@ -155,7 +179,6 @@
         }
     });
     </script>
-    
     {% block extra_js %}{% endblock %}
 </body>
 </html>

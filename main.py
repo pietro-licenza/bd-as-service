@@ -10,17 +10,22 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
+# Agendamentos
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+
 from app.core.config import settings
 
 # IMPORTAÇÕES DO BANCO PARA CRIAÇÃO DE TABELAS
-from app.core.database import engine, Base
-# Importar entities garante que o SQLAlchemy "enxergue" a classe Order e MLCredential
+from app.core.database import SessionLocal, engine, Base
 from app.models import entities 
 
 from app.api import auth_router, main_router
 from app.api.routes.web import router as web_router
 from app.services.sams_club.api.routes import router as sams_club_router
 from app.services.leroy_merlin.api.routes import router as leroy_merlin_router
+# AJUSTE: Importação do serviço de monitoramento necessária para o agendamento
+from app.services.leroy_merlin.scraper.monitoring_service import LeroyMonitoringService
 from app.services.sodimac.api.routes import router as sodimac_router
 from app.api.dashboard import router as dashboard_router
 from app.services.mercado_livre.api.routes import router as ml_webhook_router
@@ -40,10 +45,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- CRIAÇÃO AUTOMÁTICA DE TABELAS ---
-# O SQLAlchemy percorre os modelos carregados e cria as tabelas unificadas
 try:
     Base.metadata.create_all(bind=engine)
-    logger.info("✅ Tabelas unificadas (incluindo 'orders') verificadas no banco.")
+    logger.info("✅ Tabelas unificadas verificadas no banco.")
 except Exception as e:
     logger.error(f"❌ Erro ao sincronizar tabelas: {e}")
 
@@ -60,7 +64,32 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# CORS Configuration
+# --- LÓGICA DE AGENDAMENTO ---
+
+def scheduled_sync():
+    """Função que o agendador vai chamar"""
+    db = SessionLocal()
+    try:
+        logger.info("⏰ [SCHEDULED] Iniciando sincronização automática (08:00)...")
+        processed_count = LeroyMonitoringService.run_sync(db)
+        logger.info(f"✅ [SCHEDULED] Sincronização concluída: {processed_count} registros.")
+    except Exception as e:
+        logger.error(f"❌ [SCHEDULED] Erro na sincronização: {e}")
+    finally:
+        db.close()
+
+# AJUSTE: Evento de startup para iniciar o agendador
+@app.on_event("startup")
+def start_scheduler():
+    scheduler = BackgroundScheduler()
+    # Configura para rodar todo dia às 08:00 AM (Horário de Brasília)
+    trigger = CronTrigger(hour=8, minute=0, timezone="America/Sao_Paulo")
+    
+    scheduler.add_job(scheduled_sync, trigger)
+    scheduler.start()
+    logger.info("🚀 Agendador iniciado: Sync Leroy Merlin configurado para as 08:00 BRT.")
+
+# --- MIDDLEWARES ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -82,6 +111,7 @@ app.include_router(magalu_router, tags=["Magalu Webhook"])
 app.include_router(cb_router, tags=["Casas Bahia Webhook"])
 app.include_router(web_router, tags=["Web"])
 app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoring"])
+
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(settings.STATIC_DIR)), name="static")
 app.mount("/exports", StaticFiles(directory=str(settings.EXPORTS_DIR)), name="exports")

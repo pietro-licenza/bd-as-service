@@ -73,6 +73,20 @@ document.addEventListener('DOMContentLoaded', () => {
         onMount: initVendasPage      
     });
 
+    // --- ROTAS DE MONITORAMENTO ---
+    router.addRoute('/monitoramento/dashboard', {
+        title: 'Monitoramento - Dashboard',
+        render: MonitoringDashboardTemplate,
+        onMount: initMonitoringDashboardPage
+    });
+
+    router.addRoute('/monitoramento/config', {
+        title: 'Monitoramento - Configurações',
+        render: MonitoringConfigTemplate,
+        onMount: initMonitoringConfigPage
+    });
+    // ------------------------------
+
     router.addRoute('/integracoes/sams', {
         title: "Integrações - Sam's Club",
         render: SamsClubTemplate,
