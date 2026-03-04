@@ -1,9 +1,11 @@
 """
 Pydantic schemas for request/response validation.
 """
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from typing import List, Optional, Any
+from datetime import datetime
 
+# --- SCHEMAS EXISTENTES (PRODUTOS / IMAGENS / GEMINI) ---
 
 class ProductResponse(BaseModel):
     """Response model for product processing."""
@@ -20,7 +22,6 @@ class ProductResponse(BaseModel):
             }
         }
 
-
 class ErrorResponse(BaseModel):
     """Error response model."""
     num_images: int = Field(..., description="Number of images attempted")
@@ -36,12 +37,10 @@ class ErrorResponse(BaseModel):
             }
         }
 
-
 class BarcodeResult(BaseModel):
     """Barcode detection result."""
     filename: str
     barcodes: List[dict]
-
 
 class OCRResult(BaseModel):
     """OCR processing result."""
@@ -49,7 +48,6 @@ class OCRResult(BaseModel):
     text: str
     patterns: dict
     barcodes: List[dict]
-
 
 class BatchProductResponse(BaseModel):
     """Response for a single product in batch processing."""
@@ -63,12 +61,11 @@ class BatchProductResponse(BaseModel):
         json_schema_extra = {
             "example": {
                 "product_id": 1,
-                "num_images": 2,
+                "num_images": 3,
                 "filenames": ["img1.jpg", "img2.jpg"],
                 "gemini_response": '{"nome_produto": "...", "preco": "...", "ean": "..."}'
             }
         }
-
 
 class BatchResponse(BaseModel):
     """Response for batch processing."""
@@ -91,3 +88,56 @@ class BatchResponse(BaseModel):
                 ]
             }
         }
+
+# --- SCHEMAS DE USUÁRIO (NECESSÁRIOS PARA AUTH) ---
+
+class UserBase(BaseModel):
+    email: EmailStr
+    full_name: Optional[str] = None
+    loja_permissao: Optional[str] = "todas"
+
+class UserResponse(UserBase):
+    id: int
+    is_active: bool
+    model_config = ConfigDict(from_attributes=True)
+
+# --- NOVOS SCHEMAS: MONITORAMENTO DE ESTOQUE ---
+
+class MonitoringTermBase(BaseModel):
+    marketplace: str = Field(..., description="Marketplace para pesquisa (ex: leroy_merlin)")
+    term: str = Field(..., description="Termo a ser pesquisado (ex: gazebo)")
+    is_active: bool = Field(True, description="Status do monitoramento")
+
+class MonitoringTermCreate(MonitoringTermBase):
+    """Schema para criação de um termo de monitoramento"""
+    pass
+
+class MonitoringTermResponse(MonitoringTermBase):
+    """Schema de resposta para termos de monitoramento"""
+    id: int
+    created_at: datetime
+    last_run: Optional[datetime] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class StockHistoryResponse(BaseModel):
+    """Schema para histórico de estoque"""
+    id: int
+    stock_count: int
+    is_available: bool
+    recorded_at: datetime
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class MonitoredProductResponse(BaseModel):
+    """Schema para detalhes do produto monitorado e seu histórico"""
+    id: int
+    product_id: str
+    marketplace: str
+    name: str
+    url: Optional[str] = None
+    first_seen_at: datetime
+    last_updated_at: Optional[datetime] = None
+    history: List[StockHistoryResponse] = []
+    
+    model_config = ConfigDict(from_attributes=True)

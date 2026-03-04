@@ -21,6 +21,7 @@ pyyaml
 requests
 beautifulsoup4
 pydantic-settings
+email-validator>=2.0.0
 
 # Database
 sqlalchemy==2.0.27

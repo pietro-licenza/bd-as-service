@@ -1,7 +1,9 @@
 # app/models/entities.py
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, JSON
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
+from datetime import datetime, timezone
 
 class User(Base):
     __tablename__ = "users"
@@ -67,3 +69,43 @@ class CasasBahiaCredential(Base):
     access_token = Column(String)
     store_slug = Column(String, index=True) # Vínculo com a organização (ex: loja_1, loja_2)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+class MonitoringTerm(Base):
+    """Termos que o robô deve pesquisar nos marketplaces"""
+    __tablename__ = "monitoring_terms"
+
+    id = Column(Integer, primary_key=True, index=True)
+    marketplace = Column(String, index=True)  # ex: 'leroy_merlin'
+    term = Column(String, index=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_run = Column(DateTime, nullable=True) # Última vez que o robô pesquisou este termo
+
+class MonitoredProduct(Base):
+    """Produtos descobertos durante as pesquisas"""
+    __tablename__ = "monitored_products"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(String, unique=True, index=True) # ID real no Marketplace (ex: 92283702)
+    marketplace = Column(String, index=True)
+    name = Column(String)
+    url = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
+    first_seen_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_updated_at = Column(DateTime, onupdate=lambda: datetime.now(timezone.utc))
+    
+    # Relacionamento para facilitar a busca de histórico
+    history = relationship("StockHistory", back_populates="product", cascade="all, delete-orphan")
+
+class StockHistory(Base):
+    """Registro histórico de variação de estoque (Snapshot diário)"""
+    __tablename__ = "stock_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    price = Column(Float, nullable=True)
+    product_internal_id = Column(Integer, ForeignKey("monitored_products.id"))
+    stock_count = Column(Integer)
+    is_available = Column(Boolean)
+    recorded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    product = relationship("MonitoredProduct", back_populates="history")

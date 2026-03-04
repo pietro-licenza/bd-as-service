@@ -27,6 +27,7 @@ from app.services.mercado_livre.api.routes import router as ml_webhook_router
 from app.services.magalu.api.routes import router as magalu_router
 from app.services.casas_bahia.api.routes import router as cb_router
 from app.services.decathlon.api.routes import router as decathlon_router
+from app.api.routes import monitoring
 
 # Configure logging
 logging.basicConfig(
@@ -80,7 +81,7 @@ app.include_router(ml_webhook_router, tags=["Mercado Livre Webhook"])
 app.include_router(magalu_router, tags=["Magalu Webhook"])
 app.include_router(cb_router, tags=["Casas Bahia Webhook"])
 app.include_router(web_router, tags=["Web"])
-
+app.include_router(monitoring.router, prefix="/api/monitoring", tags=["Monitoring"])
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(settings.STATIC_DIR)), name="static")
 app.mount("/exports", StaticFiles(directory=str(settings.EXPORTS_DIR)), name="exports")
