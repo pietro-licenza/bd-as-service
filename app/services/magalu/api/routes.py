@@ -16,64 +16,50 @@ router = APIRouter(prefix="/api/webhooks/magalu", tags=["Magalu Webhook"])
 
 @router.post("/notifications")
 async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db)):
-    """
-    Recebe notificações em tempo real.
-    Ajustado para logar o payload completo e ser flexível com os tópicos da Magalu.
-    """
-    try:
-        payload = await request.json()
-        
-        # 1. LOG CRÍTICO: Visualização do JSON bruto no Google Cloud Logs
-        logger.info(f"🔔 WEBHOOK MAGALU RECEBIDO: {payload}")
-        
-        # Resposta ao desafio de URL (Challenge) que a Magalu faz ocasionalmente
-        if "challenge" in payload:
-            return {"challenge": payload["challenge"]}
+    """Recebe notificações e salva no banco dinamicamente"""
+    data = await request.json()
+    logger.info(f"🔔 WEBHOOK MAGALU RECEBIDO: {data}")
+    
+    if "challenge" in data:
+        return {"challenge": data["challenge"]}
 
-        topic = payload.get("topic", "")
-        resource_id = payload.get("resource")
-        tenant_id = payload.get("tenant_id") or settings.MAGALU_TENANT_ID
+    tenant_id = data.get("tenant_id") or settings.MAGALU_TENANT_ID
+    resource_path = data.get("resource") # Vem algo como "/seller/v1/orders/1516..."
 
-        # 2. FILTRO FLEXÍVEL: Aceita 'orders', 'order_status_changed', etc.
-        if "order" not in topic.lower() and topic != "":
-            logger.warning(f"⚠️ Tópico ignorado pelo filtro: {topic}")
-            return {"status": "ignored", "topic": topic}
-
-        if resource_id:
-            logger.info(f"📦 Iniciando processamento do recurso: {resource_id}")
+    if resource_path and "orders" in resource_path:
+        try:
+            # CORREÇÃO: Extrair apenas o ID numérico do final da string
+            # Isso evita o erro de URL duplicada no get_magalu_order_details
+            order_id = resource_path.split('/')[-1]
             
-            # 3. Buscar a credencial para identificar a loja (store_slug)
-            creds = db.query(MagaluCredential).filter(MagaluCredential.seller_id == tenant_id).first()
-            store_slug = creds.store_slug if creds else "brazil_direct"
-            
-            # 4. Obter token e detalhes completos do pedido
+            # 1. Obter ou renovar token automaticamente
             token = get_valid_magalu_access_token(db, tenant_id)
-            full_data = get_magalu_order_details(resource_id, token, tenant_id)
+            
+            # 2. Buscar detalhes usando apenas o ID
+            full_data = get_magalu_order_details(order_id, token, tenant_id)
             
             if full_data:
-                # Normalização do ID (Code é o ID amigável 1514...)
-                ext_id = str(full_data.get("code") or full_data.get("id"))
+                # Normalização de ID e Status
+                ext_id = str(full_data.get("code") or order_id)
+                raw_status = full_data.get("status")
+                status_final = "paid" if raw_status == "approved" else raw_status
 
-                # Normalização do Status (Mapeia 'approved' para 'paid' para padrão do Dashboard)
-                raw_status = full_data.get("status", "unknown")
-                status_final = "paid" if raw_status in ["approved", "paid"] else raw_status
-
-                # Cálculo financeiro (Normalizer 100 converte centavos para Reais)
-                amounts = full_data.get('amounts', {})
-                total_raw = amounts.get('total', 0)
-                norm = amounts.get('normalizer', 100)
+                # Cálculo do valor
+                total_raw = full_data.get('amounts', {}).get('total', 0)
+                norm = full_data.get('amounts', {}).get('normalizer', 100)
                 total_final = float(total_raw) / norm
 
-                # UPSERT: Atualiza se já existir, cria se for novo
-                existing_order = db.query(Order).filter(Order.external_id == ext_id).first()
+                # Buscar slug da loja
+                creds = db.query(MagaluCredential).filter(MagaluCredential.seller_id == tenant_id).first()
+                store_slug = creds.store_slug if creds else "brazil_direct"
 
+                # UPSERT
+                existing_order = db.query(Order).filter(Order.external_id == ext_id).first()
                 if existing_order:
-                    logger.info(f"🔄 Atualizando pedido existente: {ext_id}")
                     existing_order.status = status_final
                     existing_order.total_amount = total_final
                     existing_order.raw_data = full_data
                 else:
-                    logger.info(f"✨ Criando novo pedido Magalu: {ext_id}")
                     new_order = Order(
                         marketplace="magalu",
                         external_id=ext_id,
@@ -87,14 +73,10 @@ async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db
                 
                 db.commit()
                 logger.info(f"✅ Pedido {ext_id} processado com sucesso.")
-            else:
-                logger.error(f"❌ Não foi possível obter detalhes para o recurso: {resource_id}")
-
-    except Exception as e:
-        logger.error(f"💥 Erro catastrófico no webhook Magalu: {str(e)}")
-        db.rollback()
+        except Exception as e:
+            logger.error(f"💥 Erro no webhook Magalu: {str(e)}")
+            db.rollback()
     
-    # Retornamos sempre 200 para a Magalu não ficar tentando re-enviar em loop
     return {"status": "success"}
 
 @router.get("/sync-orders")
@@ -103,14 +85,13 @@ async def sync_magalu_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Sincronização manual via API ou Dashboard para resgatar vendas antigas"""
+    """Sincronização manual"""
     tenant_id = settings.MAGALU_TENANT_ID
     token = get_valid_magalu_access_token(db, tenant_id)
     
     ids_to_process = [manual_id] if manual_id else []
     
     if not manual_id:
-        # Busca pedidos dos últimos 30 dias para garantir
         date_from = (datetime.now(timezone.utc) - timedelta(days=30)).strftime('%Y-%m-%dT%H:%M:%SZ')
         url = "https://api.magalu.com/seller/v1/orders"
         headers = {'Authorization': f'Bearer {token}', 'X-Tenant-Id': tenant_id}
@@ -120,12 +101,10 @@ async def sync_magalu_orders(
 
     count = 0
     for pid in ids_to_process:
-        # A API de listagem retorna IDs longos, o get_details aceita o resource ou o ID
         full_data = get_magalu_order_details(pid, token, tenant_id)
         if full_data:
             ext_id = str(full_data.get("code") or full_data.get("id"))
             total_final = float(full_data.get('amounts', {}).get('total', 0)) / 100
-            
             existing = db.query(Order).filter(Order.external_id == ext_id).first()
             if not existing:
                 new_o = Order(
@@ -141,11 +120,7 @@ async def sync_magalu_orders(
     return {"status": "success", "processed": len(ids_to_process), "new": count}
 
 @router.get("/orders")
-async def list_orders(
-    db: Session = Depends(get_db), 
-    current_user: User = Depends(get_current_user)
-):
-    """Lista as ordens salvas filtrando por permissão de loja"""
+async def list_orders(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     query = db.query(Order).filter(Order.marketplace == "magalu")
     if current_user.loja_permissao != "todas":
         query = query.filter(Order.store_slug == current_user.loja_permissao)
