@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.services.decathlon.schemas import ProductUrlRequest, ProductData, BatchResponse
 from app.services.decathlon.scraper.url_extractor import extract_product_data
-from app.services.leroy_merlin.scraper.gemini_client import get_gemini_client
+from app.services.decathlon.scraper.gemini_client import get_gemini_client
 from app.core.config import settings
 from app.shared.excel_generator import generate_standard_excel
 from app.core.auth import get_current_user
@@ -47,30 +47,11 @@ async def process_product_urls(
 
             titulo = p_info.get("titulo", "Produto sem título")
             marca = p_info.get("marca", "")
+            modelo = p_info.get("modelo", "Modelo não encontrado")
             ean = p_info.get("ean", "")
             
-            # 2. Chamada ao Gemini com o prompt otimizado
-            # Adaptamos o prompt para usar a Marca e o EAN capturados
-            prompt = f"""
-            TAREFA: Copywriter de alta conversão para artigos esportivos.
-            PRODUTO: {titulo}
-            MARCA: {marca}
-            EAN: {ean}
-            URL: {url}
-            
-            Crie uma descrição persuasiva com 3 parágrafos claros:
-            - Design e Ergonomia (foco no conforto e estética).
-            - Diferenciais Técnicos (destaque as tecnologias da {marca}).
-            - Experiência de Uso (onde e como este equipamento transforma a aventura).
-            
-            REGRAS: Sem emojis, sem HTML, sem preços, sem citar a loja Decathlon.
-            RETORNE JSON: {{ "descricao": "..." }}
-            """
-            
-            # Reutilizamos o cliente do Gemini que já trata o JSON de retorno
+            # 2. Chamada ao Gemini para Descrição Profissional
             gemini_res = gemini_client.extract_description_from_url(url, titulo)
-            # Nota: No seu sistema, o extract_description_from_url pode precisar ser 
-            # levemente ajustado para aceitar o prompt customizado acima se desejar.
             
             usage = gemini_res.get("usage", {"input": 0, "output": 0})
             
@@ -86,6 +67,7 @@ async def process_product_urls(
                 titulo=titulo,
                 preco=p_info.get("preco", ""),
                 marca=marca,
+                modelo=modelo,
                 ean=ean,
                 descricao=gemini_res.get("descricao", ""),
                 image_urls=p_info.get("image_urls", []),

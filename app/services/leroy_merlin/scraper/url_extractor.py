@@ -469,10 +469,19 @@ def extract_title_from_html(html: str) -> Optional[str]:
     return None
 
 
-def extract_model_from_html(html: str) -> Optional[str]:
+def extract_model_from_html(html: str, product_url: str = None) -> Optional[str]:
     """
     Extrai o modelo do produto do HTML da Leroy Merlin.
     Procura por 'Modelo' na tabela de especificações (JSON embutido ou HTML), semelhante à extração da marca.
+    
+    Se não encontrar pelas estratégias de regex, usa Gemini AI como fallback (custo ~$0.000014).
+    
+    Args:
+        html: HTML content of the product page
+        product_url: URL do produto (necessária para fallback com Gemini)
+        
+    Returns:
+        Nome do modelo ou "Modelo não encontrado"
     """
     # Estratégia 1: Buscar na tabela de especificações técnica (Visual/HTML)
     # Procura por um texto que contenha "Modelo" e tenta pegar o próximo valor
@@ -485,7 +494,7 @@ def extract_model_from_html(html: str) -> Optional[str]:
             if value:
                 model_found = value.get_text(strip=True)
                 if model_found:
-                    logger.info(f"✅ Modelo found (pattern 1): {model_found}")
+                    logger.info(f"✅ Modelo found (Strategy 1 - HTML table): {model_found}")
                     return model_found
         except Exception:
             pass
@@ -494,7 +503,7 @@ def extract_model_from_html(html: str) -> Optional[str]:
     match = re.search(r'["\']Modelo["\']\s*:\s*["\']([^"\']+)["\']', html, re.IGNORECASE)
     if match:
         model_found = match.group(1).strip()
-        logger.info(f"✅ Modelo found (pattern 2): {model_found}")
+        logger.info(f"✅ Modelo found (Strategy 2 - JSON block): {model_found}")
         return model_found
 
     # Estratégia 3: Busca no objeto de características (characteristics)
@@ -503,9 +512,32 @@ def extract_model_from_html(html: str) -> Optional[str]:
         carac_block = match_carac.group(1)
         match_modelo = re.search(r'\{"name"\s*:\s*"Modelo"\s*,\s*"value"\s*:\s*"([^"]+)"\}', carac_block)
         if match_modelo:
-            return match_modelo.group(1)
+            model_value = match_modelo.group(1).strip()
+            logger.info(f"✅ Modelo found (Strategy 3 - characteristics): {model_value}")
+            return model_value
 
-    return None
+    # ============================================================================
+    # FALLBACK: Usar Gemini AI se não encontrou pelas estratégias de regex
+    # ============================================================================
+    logger.warning("⚠️ Campo 'Modelo' não encontrado por regex. Tentando com Gemini AI...")
+    
+    if product_url:
+        try:
+            from app.services.leroy_merlin.scraper.gemini_client import get_gemini_client
+            
+            gemini_client = get_gemini_client()
+            model_from_ai = gemini_client.extract_model_from_url(product_url)
+            
+            if model_from_ai:
+                logger.info(f"✅ Modelo encontrado com Gemini (Fallback): {model_from_ai}")
+                return model_from_ai
+            else:
+                logger.warning("⚠️ Gemini não conseguiu identificar o modelo")
+        except Exception as e:
+            logger.error(f"❌ Erro ao usar Gemini como fallback: {str(e)}")
+    
+    logger.error("❌ Nenhum modelo encontrado após todas as estratégias")
+    return "Modelo não encontrado"
 
 
 def extract_product_data(product_url: str) -> Dict[str, any]:
@@ -551,7 +583,7 @@ def extract_product_data(product_url: str) -> Dict[str, any]:
         preco = extract_price_from_html(html)
         marca = extract_brand_from_html(html)
         ean = extract_ean_from_html(html)
-        modelo = extract_model_from_html(html)
+        modelo = extract_model_from_html(html, product_url)
         
         # Extract images using the improved extractor (single point of truth)
         logger.info("🔍 Extracting images using improved extractor...")

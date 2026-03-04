@@ -190,9 +190,10 @@ function initSodimacPage() {
                             <span class="badge" style="background:rgba(255,107,53,0.1); color:#FF6B35;">Custo: ${formatBRL(p.total_cost_brl)}</span>
                         </div>
                         ${!isError ? `
-                        <div style="margin-top:0.7rem; display:flex; align-items:center; gap:18px; background:rgba(255,107,53,0.08); border-radius:8px; padding:8px 18px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+                        <div style="margin-top:0.7rem; display:flex; flex-direction:column; gap:6px; background:rgba(255,107,53,0.08); border-radius:8px; padding:8px 18px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
                             <span style="font-size:1.3rem; color:#FF6B35; font-weight:700; letter-spacing:0.5px;">Marca: ${p.marca}</span>
-                            <label style="display:flex; align-items:center; gap:12px; font-size:1.2rem; color:#FF6B35; font-weight:600;">
+                            <span style="font-size:1.3rem; color:#FF6B35; font-weight:700; letter-spacing:0.5px;">Modelo: ${p.modelo}</span>
+                            <label style="display:flex; align-items:center; gap:12px; font-size:1.2rem; color:#FF6B35; font-weight:600; margin-top:6px;">
                                 <input type="checkbox" class="alterar-marca-checkbox" data-url="${p.url_original}" style="width:28px; height:28px; border-radius:8px; box-shadow:0 1px 6px rgba(255,107,53,0.15); accent-color:#FF6B35;" />
                                 <span style="font-size:1.2rem;">Alterar Marca</span>
                             </label>

@@ -110,6 +110,7 @@ async def process_product_urls(
                 titulo=titulo,
                 preco=product_info.get("preco", ""),
                 marca=product_info.get("marca", ""),
+                modelo=product_info.get("modelo", "Modelo não encontrado"),
                 ean=product_info.get("ean", ""),
                 descricao=descricao,
                 image_urls=hd_images,

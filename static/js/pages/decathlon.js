@@ -148,22 +148,29 @@ function initDecathlonPage() {
 
                 return `
                 <div class="product-result">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1rem;">
-                        <h3 style="margin:0; color:var(--text-primary);">✅ ${p.titulo}</h3>
-                        <span class="badge" style="background:rgba(59,130,246,0.1); color:#3b82f6;">Investimento: ${formatBRL(p.total_cost_brl)}</span>
+                    <div style="display:flex; flex-direction:column; margin-bottom:1rem;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                            <h3 style="margin:0; color:var(--text-primary);">✅ ${p.titulo}</h3>
+                            <span class="badge" style="background:rgba(59,130,246,0.1); color:#3b82f6;">Investimento: ${formatBRL(p.total_cost_brl)}</span>
+                        </div>
+                        <div style="margin-top:0.7rem; display:flex; flex-direction:column; gap:6px; background:rgba(30,30,30,0.18); border-radius:8px; padding:8px 18px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+                            <span style="font-size:1.3rem; color:#0082C3; font-weight:700; letter-spacing:0.5px;">Marca: ${p.marca || 'N/A'}</span>
+                            <span style="font-size:1.3rem; color:#0082C3; font-weight:700; letter-spacing:0.5px;">Modelo: ${p.modelo || 'N/A'}</span>
+                            <span style="font-size:1.3rem; color:#0082C3; font-weight:700; letter-spacing:0.5px;">EAN: ${p.ean || 'N/A'}</span>
+                        </div>
                     </div>
 
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; background:rgba(0,0,0,0.25); padding:14px; border-radius:8px; margin-bottom:1.5rem; font-size:0.85rem; border:1px solid rgba(255,255,255,0.05);">
                         <div style="border-right:1px solid #444; padding-right:10px;">
                             <small style="color:#888; display:block; margin-bottom:4px;">📥 INPUT (PROMPT + EAN)</small>
-                            <div style="display:flex; justify-content:space-between;">
+                            <div style="color:#ede8e8; display:flex; justify-content:space-between;">
                                 <b>${p.input_tokens || 0} tks</b>
                                 <span style="color:#aaa;">${formatBRL(p.input_cost_brl || 0)}</span>
                             </div>
                         </div>
                         <div style="padding-left:5px;">
                             <small style="color:#888; display:block; margin-bottom:4px;">📤 OUTPUT (DESCRIÇÃO)</small>
-                            <div style="display:flex; justify-content:space-between;">
+                            <div style="color:#ede8e8; display:flex; justify-content:space-between;">
                                 <b>${p.output_tokens || 0} tks</b>
                                 <span style="color:#aaa;">${formatBRL(p.output_cost_brl || 0)}</span>
                             </div>
@@ -173,10 +180,7 @@ function initDecathlonPage() {
                     <div class="product-data">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
                             <p style="color:#0082C3; font-size:1.8rem; font-weight:700; margin:0;">${p.preco}</p>
-                            <div style="text-align: right;">
-                                <small style="color:#206d99; display: block;">EAN: ${p.ean || 'N/A'}</small>
-                                <small style="color:#206d99; display: block;">Marca: ${p.marca || 'N/A'}</small>
-                            </div>
+                            <small style="color:#666;">Original: <a href="${p.url_original}" target="_blank" style="color:#3b82f6;">Ver na Decathlon</a></small>
                         </div>
                         
                         <div style="color:#ccc; line-height:1.7; margin-bottom:1.5rem; font-size:0.95rem; background:rgba(255,255,255,0.02); padding:15px; border-radius:8px;">

@@ -2,10 +2,59 @@ import requests
 import re
 import json
 import logging
-from typing import Dict
+from typing import Dict, Optional
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
+
+def extract_model_from_html(html: str, product_url: str = None) -> str:
+    """
+    Extrai o modelo do produto do HTML da Decathlon.
+    
+    Estratégia:
+    1. URLs das imagens - packshot-codigo-modelo-XXXXXXX.jpg
+    2. Fallback Gemini AI (custo ~$0.000014)
+    
+    Args:
+        html: HTML content of the product page
+        product_url: URL do produto (necessária para fallback com Gemini)
+        
+    Returns:
+        Nome do modelo ou "Modelo não encontrado"
+    """
+    # Estratégia 1: Extração das URLs de imagens - packshot-codigo-modelo-8766093.jpg
+    try:
+        pattern_image_url = r'packshot-codigo-modelo-(\d+)\.jpg'
+        match = re.search(pattern_image_url, html)
+        if match:
+            model = match.group(1)
+            logger.info(f"✅ Modelo encontrado (Regex - packshot): {model}")
+            return model
+    except Exception as e:
+        logger.debug(f"⚠️ Regex packshot failed: {e}")
+
+    # ============================================================================
+    # FALLBACK: Usar Gemini AI se não encontrou pelo código do modelo
+    # ============================================================================
+    logger.warning("⚠️ Código do modelo não encontrado no HTML. Tentando com Gemini AI...")
+    
+    if product_url:
+        try:
+            from app.services.decathlon.scraper.gemini_client import get_gemini_client
+            
+            gemini_client = get_gemini_client()
+            model_from_ai = gemini_client.extract_model_from_url(product_url)
+            
+            if model_from_ai:
+                logger.info(f"✅ Modelo encontrado com Gemini (Fallback): {model_from_ai}")
+                return model_from_ai
+            else:
+                logger.warning("⚠️ Gemini não conseguiu identificar o modelo")
+        except Exception as e:
+            logger.error(f"❌ Erro ao usar Gemini como fallback: {str(e)}")
+    
+    logger.error("❌ Nenhum modelo encontrado após todas as estratégias")
+    return "Modelo não encontrado"
 
 def extract_product_data(product_url: str) -> Dict:
     logger.info(f"📥 Acessando a URL: {product_url}")
@@ -61,12 +110,16 @@ def extract_product_data(product_url: str) -> Dict:
             fb_match = re.search(r'Códigos EAN13 do produto.*?(\d{13})', html_content, re.DOTALL)
             if fb_match: ean = fb_match.group(1)
 
+        # 3. CAPTURA DO MODELO (Regex + Fallback Gemini AI)
+        modelo = extract_model_from_html(html_content, product_url)
+
         success = True if title else False
         return {
             "titulo": title,
             "preco": f"R$ {price:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
             "marca": brand,
             "ean": ean,
+            "modelo": modelo,
             "image_urls": images,
             "success": success,
             "error": None if success else "Dados do produto não encontrados no HTML (JSON-LD ausente)."

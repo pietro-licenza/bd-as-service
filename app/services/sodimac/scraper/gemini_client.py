@@ -23,6 +23,58 @@ class SodimacGeminiClient:
         # Prevenção de AttributeError (conforme visto no log da Leroy)
         self.model = getattr(settings, "GEMINI_MODEL_TEXT", "gemini-1.5-flash")
 
+    def extract_model_from_url(self, product_url: str) -> Optional[str]:
+        """
+        Extrai APENAS o nome/código do modelo do produto usando IA.
+        Usado como fallback quando regex não encontra o campo 'Modelo'.
+        
+        Custo estimado: ~$0.000014 por produto (muito barato!).
+        
+        Args:
+            product_url: URL do produto da Sodimac
+            
+        Returns:
+            Nome do modelo ou None se falhar
+        """
+        logger.info(f"🤖 [Fallback Gemini - Sodimac] Extraindo modelo de: {product_url}")
+        prompt = self._build_model_extraction_prompt(product_url)
+        
+        max_retries = 2  # Menos retries pois é fallback
+        retry_delay = 1
+
+        for attempt in range(max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt
+                )
+                
+                # Extrai apenas o texto limpo (sem JSON, sem formatação)
+                model = response.text.strip()
+                
+                # Remove aspas, quebras de linha e espaços extras
+                model = model.replace('"', '').replace("'", "").replace('\n', ' ').strip()
+                
+                # Remove textos comuns que não são o modelo
+                if model and len(model) > 0 and model.lower() not in ['null', 'none', 'não encontrado', 'n/a', 'modelo não encontrado']:
+                    logger.info(f"✅ Modelo extraído pelo Gemini: {model}")
+                    return model
+                else:
+                    logger.warning("⚠️ Gemini não encontrou o modelo")
+                    return None
+
+            except Exception as e:
+                if "503" in str(e) or "429" in str(e):
+                    if attempt < max_retries - 1:
+                        logger.warning(f"⚠️ Google ocupado (Tentativa {attempt+1}). Retentando...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
+                logger.error(f"❌ Falha na extração de modelo: {str(e)}")
+                return None
+        
+        return None
+
     def extract_product_data_from_url(self, product_url: str) -> Dict[str, any]:
         """
         Extrai metadados técnicos (Título, Preço, Marca, EAN) diretamente via IA.
@@ -124,6 +176,25 @@ class SodimacGeminiClient:
         return results
 
     # --- Builders de Prompt ---
+
+    def _build_model_extraction_prompt(self, product_url: str) -> str:
+        """Constrói o prompt MINIMALISTA para extrair apenas o modelo."""
+        return f"""
+        URL: {product_url}
+        
+        TAREFA: Acesse esta URL da Sodimac e identifique APENAS o nome ou código do MODELO do produto.
+        
+        REGRAS:
+        1. Retorne SOMENTE o nome/código do modelo, nada mais
+        2. Não retorne marca, cor, tamanho ou outras características
+        3. Se não encontrar o modelo, retorne: "Modelo não encontrado"
+        4. Sem JSON, sem formatação, apenas o texto puro
+        
+        EXEMPLO:
+        - Se o produto for "Mesa Look bambú", retorne: "Look bambú"
+        - Se o produto for "Ventilador B94401702 Mallory", retorne: "B94401702"
+        - Se o produto for "Conjunto Capuccino", retorne: "Capuccino"
+        """
 
     def _build_extraction_prompt(self, product_url: str) -> str:
         return f"""

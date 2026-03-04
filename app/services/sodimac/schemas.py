@@ -26,6 +26,7 @@ class ProductData(BaseModel):
     titulo: Optional[str] = Field(None, description="Título do produto")
     preco: Optional[str] = Field(None, description="Preço extraído")
     marca: str = Field(default="", description="Marca do fabricante")
+    modelo: str = Field(default="", description="Modelo do produto")
     ean: str = Field(default="", description="Código EAN")
     descricao: str = Field(default="", description="Descrição profissional gerada pela IA")
     image_urls: List[str] = Field(default_factory=list, description="Lista de URLs das imagens")

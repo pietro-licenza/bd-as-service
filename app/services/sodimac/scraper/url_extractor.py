@@ -194,6 +194,97 @@ def extract_title_from_html(html: str) -> str:
     return ""
 
 
+def extract_model_from_html(html: str, product_url: str = None) -> str:
+    """
+    Extrai o modelo do produto do HTML da Sodimac.
+    
+    Estratégias de regex (baseadas em análise de HTMLs reais):
+    1. Ficha técnica HTML - div class="element key">Modelo
+    2. JSON embutido - {"name":"Modelo","values":["..."]
+    3. Área de exibição - class="product-model">Modelo<!-- --> <!-- -->...
+    4. Especificações principais - attribute-text">Modelo : ...
+    
+    Se nenhuma funcionar, usa Gemini AI como fallback (custo ~$0.000014).
+    
+    Args:
+        html: HTML content of the product page
+        product_url: URL do produto (necessária para fallback com Gemini)
+        
+    Returns:
+        Nome do modelo ou "Modelo não encontrado"
+    """
+    # Estratégia 1: Ficha técnica HTML - <div class="jsx-1675311072 element key">Modelo</div><div class="jsx-1675311072 element value">Look bambú</div>
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
+        modelo_key = soup.find('div', class_=re.compile('element key'), text=re.compile(r'^Modelo$', re.IGNORECASE))
+        if modelo_key:
+            # Busca o próximo div com a classe "element value"
+            modelo_value = modelo_key.find_next_sibling('div', class_=re.compile('element value'))
+            if modelo_value:
+                model = modelo_value.get_text(strip=True)
+                if model:
+                    logger.info(f"✅ Modelo found (Strategy 1 - Ficha Técnica HTML): {model}")
+                    return model
+    except Exception as e:
+        logger.debug(f"⚠️ Strategy 1 failed: {e}")
+
+    # Estratégia 2: JSON embutido - {"name":"Modelo","values":["Look bambú"],...}
+    try:
+        pattern_json = r'\{"name"\s*:\s*"Modelo"\s*,\s*"values"\s*:\s*\["([^"]+)"\]'
+        match = re.search(pattern_json, html)
+        if match:
+            model = match.group(1).strip()
+            logger.info(f"✅ Modelo found (Strategy 2 - JSON embutido): {model}")
+            return model
+    except Exception as e:
+        logger.debug(f"⚠️ Strategy 2 failed: {e}")
+
+    # Estratégia 3: Área de exibição do modelo - <div class="jsx-283748275 product-model">Modelo<!-- --> <!-- -->Look bambú</div>
+    try:
+        pattern_display = r'class="[^"]*product-model[^"]*">Modelo(?:<!--[^>]*-->|\s)*([^<]+)'
+        match = re.search(pattern_display, html)
+        if match:
+            model = match.group(1).strip()
+            logger.info(f"✅ Modelo found (Strategy 3 - Área de exibição): {model}")
+            return model
+    except Exception as e:
+        logger.debug(f"⚠️ Strategy 3 failed: {e}")
+
+    # Estratégia 4: Especificações principais - <span class="jsx-1415091980 attribute-text">Modelo : Look bambú</span>
+    try:
+        pattern_specs = r'class="[^"]*attribute-text[^"]*">Modelo\s*:\s*([^<]+)'
+        match = re.search(pattern_specs, html)
+        if match:
+            model = match.group(1).strip()
+            logger.info(f"✅ Modelo found (Strategy 4 - Especificações principais): {model}")
+            return model
+    except Exception as e:
+        logger.debug(f"⚠️ Strategy 4 failed: {e}")
+
+    # ============================================================================
+    # FALLBACK: Usar Gemini AI se não encontrou pelas estratégias de regex
+    # ============================================================================
+    logger.warning("⚠️ Campo 'Modelo' não encontrado por regex. Tentando com Gemini AI...")
+    
+    if product_url:
+        try:
+            from app.services.sodimac.scraper.gemini_client import get_gemini_client
+            
+            gemini_client = get_gemini_client()
+            model_from_ai = gemini_client.extract_model_from_url(product_url)
+            
+            if model_from_ai:
+                logger.info(f"✅ Modelo encontrado com Gemini (Fallback): {model_from_ai}")
+                return model_from_ai
+            else:
+                logger.warning("⚠️ Gemini não conseguiu identificar o modelo")
+        except Exception as e:
+            logger.error(f"❌ Erro ao usar Gemini como fallback: {str(e)}")
+    
+    logger.error("❌ Nenhum modelo encontrado após todas as estratégias")
+    return "Modelo não encontrado"
+
+
 def extract_product_data(url: str) -> Dict[str, str]:
     """Main function to extract all product data."""
     headers = {
@@ -209,9 +300,10 @@ def extract_product_data(url: str) -> Dict[str, str]:
             'preco': extract_price_from_html(html),
             'marca': extract_brand_from_html(html),
             'ean': extract_ean_from_html(html),
+            'modelo': extract_model_from_html(html, url),
             'image_urls': extract_images(url),
             'url_original': url
         }
     except Exception as e:
         logger.error(f"❌ Error: {e}")
-        return {'titulo': '', 'preco': None, 'image_urls': [], 'url_original': url, 'error': str(e)}
+        return {'titulo': '', 'preco': None, 'modelo': 'Modelo não encontrado', 'image_urls': [], 'url_original': url, 'error': str(e)}
