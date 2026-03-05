@@ -125,20 +125,36 @@ async function initMonitoringConfigPage() {
                 // Formata o nome do marketplace para exibição
                 const marketName = t.marketplace.replace('_', ' ').toUpperCase();
                 
+                // Define status e cor
+                const statusText = t.is_active ? 'Ativo' : 'Inativo';
+                const statusColor = t.is_active ? '#10b981' : '#6b7280';
+                const toggleIcon = t.is_active ? '⏸️' : '▶️';
+                const toggleText = t.is_active ? 'Pausar' : 'Ativar';
+                
                 return `
-                <tr style="border-top: 1px solid rgba(255,255,255,0.05);">
-                    <td style="padding: 1rem; font-weight: 600;">${t.term}</td>
+                <tr style="border-top: 1px solid rgba(255,255,255,0.05); ${!t.is_active ? 'opacity: 0.5;' : ''}">
+                    <td style="padding: 1rem; font-weight: 600; color: #ffffff;">${t.term}</td>
                     <td style="padding: 1rem;">
                         <span style="font-size: 0.7rem; background: rgba(59, 130, 246, 0.1); color: #3b82f6; padding: 4px 8px; border-radius: 4px; font-weight: bold;">
                             🏛️ ${marketName}
                         </span>
                     </td>
-                    <td style="padding: 1rem;"><span style="color: #10b981;">● Ativo</span></td>
+                    <td style="padding: 1rem;"><span style="color: ${statusColor};">● ${statusText}</span></td>
                     <td style="padding: 1rem; color: #888;">
                         ${t.last_run ? new Date(t.last_run).toLocaleString('pt-BR') : 'Aguardando sync'}
                     </td>
-                    <td style="padding: 1rem; text-align: right;">
-                        <button onclick="deleteMonTerm(${t.id})" class="remove-btn" style="padding: 5px 10px; cursor:pointer;">🗑️</button>
+                    <td style="padding: 1rem; text-align: right; display: flex; gap: 0.5rem; justify-content: flex-end;">
+                        <button onclick="toggleMonTerm(${t.id})" 
+                                style="padding: 5px 10px; cursor:pointer; background: ${t.is_active ? 'rgba(251, 191, 36, 0.1)' : 'rgba(34, 197, 94, 0.1)'}; 
+                                       border: 1px solid ${t.is_active ? '#fbbf24' : '#22c55e'}; color: ${t.is_active ? '#fbbf24' : '#22c55e'}; 
+                                       border-radius: 6px; font-size: 0.75rem; transition: all 0.2s;">
+                            ${toggleIcon} ${toggleText}
+                        </button>
+                        <button onclick="deleteMonTerm(${t.id})" class="remove-btn" 
+                                style="padding: 5px 10px; cursor:pointer; background: rgba(239, 68, 68, 0.1); 
+                                       border: 1px solid #ef4444; color: #ef4444; border-radius: 6px; font-size: 0.75rem;">
+                            🗑️ Deletar
+                        </button>
                     </td>
                 </tr>
             `}).join('');
@@ -174,8 +190,26 @@ async function initMonitoringConfigPage() {
         }
     };
 
+    window.toggleMonTerm = async (id) => {
+        try {
+            const res = await axios.patch(`/api/monitoring/terms/${id}/toggle`, {}, { 
+                headers: { 'Authorization': `Bearer ${token}` } 
+            });
+            // Mostra feedback visual
+            const btn = event.target.closest('button');
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = res.data.is_active ? '✅ Ativado!' : '⏸️ Pausado!';
+            setTimeout(() => {
+                loadTerms();
+            }, 500);
+        } catch (err) {
+            alert("Erro ao alterar status do termo.");
+            console.error(err);
+        }
+    };
+
     window.deleteMonTerm = async (id) => {
-        if (await window.showConfirmModal("Deseja excluir este monitoramento?")) {
+        if (await window.showConfirmModal("⚠️ Tem certeza que deseja DELETAR permanentemente este termo?\\n\\nDica: Use o botão 'Pausar' para desativar temporariamente.")) {
             await axios.delete(`/api/monitoring/terms/${id}`, { headers: { 'Authorization': `Bearer ${token}` } });
             loadTerms();
         }
@@ -189,8 +223,11 @@ async function initMonitoringDashboardPage() {
 
     try {
         const termsRes = await axios.get('/api/monitoring/terms', { headers: { 'Authorization': `Bearer ${token}` } });
+        // Filtra apenas termos ativos para o seletor
+        const activeTerms = termsRes.data.filter(t => t.is_active);
+        
         selector.innerHTML = '<option value="">Escolha um monitoramento...</option>' + 
-            termsRes.data.map(t => {
+            activeTerms.map(t => {
                 const marketLabel = t.marketplace.replace('_', ' ').toUpperCase();
                 return `<option value="${t.id}">${t.term.toUpperCase()} (${marketLabel})</option>`;
             }).join('');

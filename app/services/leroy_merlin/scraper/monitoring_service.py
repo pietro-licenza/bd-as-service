@@ -1,3 +1,29 @@
+"""
+Serviço de Monitoramento - Leroy Merlin
+=========================================
+
+Este módulo realiza o monitoramento automático de produtos da Leroy Merlin.
+
+MODOS DE FILTRAGEM:
+-------------------
+Por padrão, usa modo FLEXÍVEL que aceita todos os produtos Leroy encontrados.
+Isso é ideal para buscas por:
+  - Códigos específicos (ex: "90560491")
+  - Nomes exatos de produtos (ex: "gazebo oxis")
+  - Termos amplos (ex: "furadeira")
+
+Para ativar o modo ESTRITO (filtra apenas produtos relacionados ao termo):
+  - Edite a linha 44 e mude strict_filter=False para strict_filter=True
+  - Útil quando o termo é muito genérico e você quer apenas produtos da categoria
+
+FUNCIONAMENTO:
+--------------
+1. Busca produtos no Algolia com base nos termos cadastrados
+2. Filtra produtos oficiais Leroy (IDs começando com 8 ou 9, até 9 dígitos)
+3. Consulta estoque e preço na API V3 da Leroy
+4. Salva snapshot no histórico para análise de tendências
+"""
+
 import requests
 import logging
 from sqlalchemy.orm import Session
@@ -39,8 +65,9 @@ class LeroyMonitoringService:
         for term_obj in terms:
             logger.info(f"🚀 [INÍCIO] Termo: '{term_obj.term}'")
             
-            # 1. Busca produtos candidatos no Algolia
-            candidates = LeroyMonitoringService._fetch_products(term_obj.term)
+            # 1. Busca produtos candidatos no Algolia (modo flexível por padrão)
+            # Para ativar filtro estrito, use: _fetch_products(term_obj.term, strict_filter=True)
+            candidates = LeroyMonitoringService._fetch_products(term_obj.term, strict_filter=False)
             total_candidates = len(candidates)
             logger.info(f"📦 {total_candidates} produtos oficiais identificados.")
             
@@ -86,9 +113,18 @@ class LeroyMonitoringService:
         return total_saved
 
     @staticmethod
-    def _fetch_products(term, max_pages=10):
-        """Busca produtos no Algolia com extração de Imagem e Preço"""
+    def _fetch_products(term, max_pages=10, strict_filter=False):
+        """
+        Busca produtos no Algolia com extração de Imagem e Preço.
+        
+        Args:
+            term: Termo de busca
+            max_pages: Número máximo de páginas
+            strict_filter: Se True, aplica filtro rigoroso de categoria/termo.
+                          Se False (padrão), aceita todos produtos Leroy encontrados.
+        """
         all_products = []
+        filtered_count = {'by_id': 0, 'by_term': 0}
 
         for page in range(max_pages):
             payload = {
@@ -106,15 +142,30 @@ class LeroyMonitoringService:
                 
                 for hit in hits:
                     p_id = str(hit.get('product_id', ''))
+                    p_name = hit.get('name', '')
                     
                     # FILTRO 1: Padrão de ID Leroy 1P (8-9 dígitos, inicia com 8 ou 9)
                     if len(p_id) > 9 or not (p_id.startswith('9') or p_id.startswith('8')):
+                        filtered_count['by_id'] += 1
                         continue
                         
-                    # FILTRO 2: Categoria/Termo no nome ou categoria
-                    cat = hit.get('CategoryUnique') or ''
-                    if term.lower() not in cat.lower() and term.lower() not in hit.get('name', '').lower():
-                        continue
+                    # FILTRO 2: FLEXÍVEL - Só aplica se strict_filter=True
+                    # Verifica se QUALQUER palavra do termo está no nome/categoria
+                    if strict_filter:
+                        cat = hit.get('CategoryUnique') or ''
+                        term_words = term.lower().split()
+                        
+                        # Verifica se pelo menos UMA palavra do termo aparece
+                        found = False
+                        for word in term_words:
+                            if len(word) > 2:  # Ignora palavras muito curtas
+                                if word in cat.lower() or word in p_name.lower():
+                                    found = True
+                                    break
+                        
+                        if not found:
+                            filtered_count['by_term'] += 1
+                            continue
                     
                     # EXTRAÇÃO DE IMAGEM: Constrói a URL do Cloudinary da Leroy
                     image_id = hit.get('image')
@@ -122,8 +173,18 @@ class LeroyMonitoringService:
                     if image_id:
                         clean_img_url = f"https://res.cloudinary.com/lmru-brazil/image/upload/d_v1:static:product:placeholder.png/w_600,h_600,c_pad,b_white,f_auto,q_auto/v1/static/product/{image_id}/"
 
-                    # EXTRAÇÃO DE PREÇO
-                    price = hit.get('price', 0.0)
+                    # EXTRAÇÃO DE PREÇO - Tenta vários campos possíveis
+                    price = (
+                        hit.get('price') or 
+                        hit.get('sellingPrice') or 
+                        hit.get('final_price') or 
+                        hit.get('Price') or 
+                        0.0
+                    )
+                    
+                    # Log de debug se preço estiver zerado
+                    if price == 0.0:
+                        logger.warning(f"      ⚠️  Preço R$ 0.0 para produto {p_id} - {p_name[:50]}")
                     
                     # CORREÇÃO DE URL
                     raw_url = hit.get('url', '')
@@ -131,14 +192,18 @@ class LeroyMonitoringService:
 
                     all_products.append({
                         'product_id': p_id,
-                        'name': hit.get('name'),
+                        'name': p_name,
                         'url': clean_url,
                         'image_url': clean_img_url,
-                        'price': float(price)
+                        'price': float(price) if price else 0.0
                     })
             except Exception as e:
                 logger.error(f"Erro na busca Algolia: {e}")
                 break
+        
+        # Logs de resumo de filtragem
+        if filtered_count['by_id'] > 0 or filtered_count['by_term'] > 0:
+            logger.info(f"   🗑️  Produtos filtrados: {filtered_count['by_id']} por ID, {filtered_count['by_term']} por termo")
         
         return all_products
 

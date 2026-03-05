@@ -51,14 +51,35 @@ def create_monitoring_term(
 @router.get("/terms", response_model=List[MonitoringTermResponse])
 def list_monitoring_terms(
     marketplace: str = None,
+    active_only: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Lista os termos cadastrados."""
+    """Lista os termos cadastrados com opção de filtrar por marketplace e status ativo."""
     query = db.query(MonitoringTerm)
     if marketplace:
         query = query.filter(MonitoringTerm.marketplace == marketplace)
+    if active_only:
+        query = query.filter(MonitoringTerm.is_active == True)
     return query.all()
+
+@router.patch("/terms/{term_id}/toggle")
+def toggle_term_status(
+    term_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Ativa ou desativa um termo de monitoramento."""
+    term = db.query(MonitoringTerm).filter(MonitoringTerm.id == term_id).first()
+    if not term:
+        raise HTTPException(status_code=404, detail="Termo não encontrado")
+    
+    term.is_active = not term.is_active
+    db.commit()
+    db.refresh(term)
+    
+    status_text = "ativado" if term.is_active else "desativado"
+    return {"status": "success", "message": f"Termo {status_text} com sucesso", "is_active": term.is_active}
 
 @router.delete("/terms/{term_id}")
 def delete_term(
@@ -66,7 +87,7 @@ def delete_term(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Remove um termo do monitoramento."""
+    """Remove um termo do monitoramento (use toggle para ativar/desativar)."""
     term = db.query(MonitoringTerm).filter(MonitoringTerm.id == term_id).first()
     if not term:
         raise HTTPException(status_code=404, detail="Termo não encontrado")
@@ -124,9 +145,10 @@ def get_dashboard_data(
     if not term_obj:
         raise HTTPException(status_code=404, detail="Termo não encontrado")
 
+    # Busca todos os produtos do marketplace que têm histórico de estoque
+    # (produtos descobertos por este ou outros termos do mesmo marketplace)
     products = db.query(MonitoredProduct).filter(
-        MonitoredProduct.marketplace == term_obj.marketplace,
-        MonitoredProduct.name.ilike(f"%{term_obj.term}%")
+        MonitoredProduct.marketplace == term_obj.marketplace
     ).all()
 
     grid_data = []
@@ -180,7 +202,7 @@ def get_dashboard_data(
         "summary": {
             "term": term_obj.term,
             "marketplace": term_obj.marketplace,
-            "total_products": len(products),
+            "total_products": len(grid_data),  # Conta apenas produtos com histórico
             "estimated_sales_24h": total_estimated_sales,
             "out_of_stock_count": out_of_stock_count,
             "top_selling_product": top_mover["name"]

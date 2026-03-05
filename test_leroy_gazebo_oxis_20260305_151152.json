@@ -1,0 +1,58 @@
+{
+  "term": "gazebo oxis",
+  "timestamp": "2026-03-05T15:11:52.142729",
+  "total_found": 4,
+  "processed": 4,
+  "summary": {
+    "available": 3,
+    "unavailable": 1,
+    "errors": 0,
+    "total_stock": 540
+  },
+  "results": [
+    {
+      "product_id": "90560491",
+      "name": "Gazebo Aço e Poliéster com Cortina Taupe 300x400cm Oxis Naterial",
+      "url": "https://www.leroymerlin.com.br/gazebo-aco-e-poliester-com-cortina-taupe-300x400cm-oxis-naterial_90560491",
+      "image_url": null,
+      "price": 0.0,
+      "category": "Jardim e Varanda > Móveis para Área Externa > Gazebos e Tendas",
+      "stock_status": "OK",
+      "stock_count": 220,
+      "is_available": true
+    },
+    {
+      "product_id": "90560505",
+      "name": "Gazebo Aço e Poliéster com Cortina Taupe 2,80x2,98x2,98m Oxis Naterial",
+      "url": "https://www.leroymerlin.com.br/gazebo-aco-e-poliester-com-cortina-taupe-2,80x2,98x2,98m-oxis-naterial_90560505",
+      "image_url": null,
+      "price": 0.0,
+      "category": "Jardim e Varanda > Móveis para Área Externa > Gazebos e Tendas",
+      "stock_status": "OK",
+      "stock_count": 247,
+      "is_available": true
+    },
+    {
+      "product_id": "91078946",
+      "name": "Cobertura para Gazebo em Poliéster Taupe 300x400cm Oxis Naterial",
+      "url": "https://www.leroymerlin.com.br/cobertura-para-gazebo-em-poliester-taupe-300x400cm-oxis-naterial_91078946",
+      "image_url": null,
+      "price": 0.0,
+      "category": "Jardim e Varanda > Móveis para Área Externa > Gazebos e Tendas",
+      "stock_status": "OK",
+      "stock_count": 0,
+      "is_available": false
+    },
+    {
+      "product_id": "91078953",
+      "name": "Cobertura para Gazebo em Poliéster Cinza 2,95x2,95m Oxis Naterial",
+      "url": "https://www.leroymerlin.com.br/cobertura-para-gazebo-em-poliester-cinza-2,95x2,95m-oxis-naterial_91078953",
+      "image_url": null,
+      "price": 0.0,
+      "category": "Jardim e Varanda > Móveis para Área Externa > Gazebos e Tendas",
+      "stock_status": "OK",
+      "stock_count": 73,
+      "is_available": true
+    }
+  ]
+}
