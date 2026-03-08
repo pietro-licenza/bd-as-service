@@ -24,13 +24,14 @@ async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db
         return {"challenge": data["challenge"]}
 
     tenant_id = data.get("tenant_id") or settings.MAGALU_TENANT_ID
-    resource_path = data.get("resource") # Vem algo como "/seller/v1/orders/1516..."
+
+    resource_path = data.get("resource") or data.get("data", {}).get("resource")
 
     if resource_path and "orders" in resource_path:
         try:
             # CORREÇÃO: Extrair apenas o ID numérico do final da string
             # Isso evita o erro de URL duplicada no get_magalu_order_details
-            order_id = resource_path.split('/')[-1]
+            order_id = resource_path.split('?')[0].split('/')[-1]
             
             # 1. Obter ou renovar token automaticamente
             token = get_valid_magalu_access_token(db, tenant_id)
