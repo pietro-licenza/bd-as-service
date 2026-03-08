@@ -14,15 +14,22 @@ MAGALU_API_URL = "https://api.magalu.com"             # Para buscar os pedidos
 
 def get_valid_magalu_access_token(db, tenant_id: str):
     """Busca credenciais no banco e renova o token se necessário."""
-    creds = db.query(MagaluCredential).filter(MagaluCredential.seller_id == tenant_id).first()
+    # O banco armazena apenas o UUID, sem o prefixo "GENPUB."
+    seller_id_db = tenant_id.replace("GENPUB.", "")
+    creds = db.query(MagaluCredential).filter(MagaluCredential.seller_id == seller_id_db).first()
     
     if not creds:
-        logger.error(f"❌ Seller {tenant_id} não encontrado no banco de dados.")
-        raise Exception(f"Credenciais Magalu não encontradas para {tenant_id}")
+        logger.error(f"❌ Seller {seller_id_db} não encontrado no banco de dados.")
+        raise Exception(f"Credenciais Magalu não encontradas para {seller_id_db}")
 
     now = datetime.now(timezone.utc)
     
     # Verifica expiração (com margem de segurança de 5 min)
+    # Se expires_at for NULL mas access_token existir, assume válido por 2h a partir de agora
+    if creds.access_token and not creds.expires_at:
+        creds.expires_at = now + timedelta(hours=2)
+        db.commit()
+
     is_expired = (
         not creds.access_token or 
         not creds.expires_at or 
@@ -37,7 +44,8 @@ def get_valid_magalu_access_token(db, tenant_id: str):
             "grant_type": "refresh_token",
             "client_id": settings.MAGALU_CLIENT_ID,
             "client_secret": settings.MAGALU_CLIENT_SECRET,
-            "refresh_token": creds.refresh_token
+            "refresh_token": creds.refresh_token,
+            "redirect_uri": "https://bd-as-service-88534390451.us-central1.run.app/api/webhooks/magalu/callback"
         }
         
         try:

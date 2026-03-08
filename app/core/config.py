@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     # Magalu (Vindo apenas das variáveis de ambiente)
     MAGALU_CLIENT_ID: Optional[str] = os.getenv("MAGALU_CLIENT_ID")
     MAGALU_CLIENT_SECRET: Optional[str] = os.getenv("MAGALU_CLIENT_SECRET")
-    MAGALU_TENANT_ID: str = "64c48b1f-d1f4-448f-a540-6c68eb9d2be2"
+    MAGALU_TENANT_ID: str = "GENPUB.64c48b1f-d1f4-448f-a540-6c68eb9d2be2"
 
 
     # --- SEGURANÇA E BANCO DE DADOS ---

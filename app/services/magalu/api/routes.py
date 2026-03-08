@@ -97,9 +97,11 @@ async def sync_magalu_orders(
         date_from = (datetime.now(timezone.utc) - timedelta(days=30)).strftime('%Y-%m-%dT%H:%M:%SZ')
         url = "https://api.magalu.com/seller/v1/orders"
         headers = {'Authorization': f'Bearer {token}', 'X-Tenant-Id': tenant_id}
-        resp = requests.get(url, headers=headers, params={"created_at_from": date_from})
+        resp = requests.get(url, headers=headers, params={"purchased_at__gte": date_from})
         if resp.status_code == 200:
-            ids_to_process = [o['id'] for o in resp.json().get('orders', [])]
+            data = resp.json()
+            orders = data.get('results', data.get('orders', []))
+            ids_to_process = [o['code'] for o in orders if o.get('code')]
 
     count = 0
     for pid in ids_to_process:
