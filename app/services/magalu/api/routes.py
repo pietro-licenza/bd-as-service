@@ -33,6 +33,7 @@ async def magalu_webhook_receiver(request: Request, db: Session = Depends(get_db
             # Isso evita o erro de URL duplicada no get_magalu_order_details
             order_id = resource_path.split('?')[0].split('/')[-1]
             
+            logger.info(f"🔍 Processando Pedido Magalu: {order_id}")
             # 1. Obter ou renovar token automaticamente
             token = get_valid_magalu_access_token(db, tenant_id)
             
@@ -125,4 +126,15 @@ async def list_orders(db: Session = Depends(get_db), current_user: User = Depend
     query = db.query(Order).filter(Order.marketplace == "magalu")
     if current_user.loja_permissao != "todas":
         query = query.filter(Order.store_slug == current_user.loja_permissao)
+
     return query.order_by(Order.created_at.desc()).all()
+
+# Callback para autenticação (se necessário)
+@router.get("/callback")
+async def magalu_callback(code: str):
+    """Rota temporária para capturar o código de autorização"""
+    return {
+        "status": "sucesso", 
+        "message": "Código capturado! Copie o valor abaixo e mande para o chat.",
+        "code": code
+    }
