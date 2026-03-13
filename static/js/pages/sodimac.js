@@ -124,12 +124,26 @@ function initSodimacPage() {
             // 2. Botão de Download Excel
             if (data.excel_download_url) {
                 downloadContainer.innerHTML = `
-                    <div class="download-card" style="background:rgba(255,107,53,0.05); border:1px solid #FF6B35; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;">
+                    <div class="download-card" style="background:rgba(255,107,53,0.05); border:1px solid #FF6B35; padding:15px; border-radius:8px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
                         <span style="color:#FF6B35; font-weight:600;">📊 Relatório Sodimac gerado com sucesso!</span>
                         <button id="customExcelDownloadBtn" class="btn btn-primary" style="background:#FF6B35; border:none; padding:8px 20px; font-size:0.9rem; color:white; border-radius:5px;">⬇️ Baixar Excel</button>
                     </div>
+                    <div style="background:rgba(255,107,53,0.08); border:1px solid #FF6B35; padding:12px 18px; border-radius:8px; margin-bottom:20px; display:flex; align-items:center; gap:14px;">
+                        <input type="checkbox" id="alterarMarcaGlobal" style="width:24px; height:24px; border-radius:6px; accent-color:#FF6B35; cursor:pointer; flex-shrink:0;" />
+                        <label for="alterarMarcaGlobal" style="font-size:1.05rem; color:#FF6B35; font-weight:600; cursor:pointer; margin:0;">🏷️ Alterar Marca Global — aplicar <em>Brazil Home Living</em> a todos os produtos</label>
+                    </div>
                 `;
                 setTimeout(() => {
+                    // Checkbox global: marca/desmarca todos os checkboxes individuais
+                    const globalCb = document.getElementById('alterarMarcaGlobal');
+                    if (globalCb) {
+                        globalCb.addEventListener('change', () => {
+                            document.querySelectorAll('.alterar-marca-checkbox').forEach(cb => {
+                                cb.checked = globalCb.checked;
+                            });
+                        });
+                    }
+
                     const btn = document.getElementById('customExcelDownloadBtn');
                     if (btn) {
                         btn.addEventListener('click', async () => {

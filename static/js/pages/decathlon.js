@@ -116,11 +116,64 @@ function initDecathlonPage() {
             // 2. Botão de Download do Excel
             if (data.excel_download_url) {
                 downloadContainer.innerHTML = `
-                    <div class="download-card" style="background:rgba(0,130,195,0.1); border:1px solid #0082C3; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;">
+                    <div class="download-card" style="background:rgba(0,130,195,0.1); border:1px solid #0082C3; padding:15px; border-radius:8px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
                         <span style="color:#0082C3; font-weight:600;">📊 Relatório Excel pronto para download!</span>
-                        <a href="${data.excel_download_url}" download class="btn btn-primary" style="background:#0082C3; padding:8px 20px; text-decoration:none; font-size:0.9rem; color: white; border-radius: 5px;">⬇️ Baixar Excel</a>
+                        <button id="customExcelDownloadBtn" class="btn btn-primary" style="background:#0082C3; padding:8px 20px; font-size:0.9rem; color:white; border-radius:5px;">⬇️ Baixar Excel</button>
+                    </div>
+                    <div style="background:rgba(0,130,195,0.08); border:1px solid #0082C3; padding:12px 18px; border-radius:8px; margin-bottom:20px; display:flex; align-items:center; gap:14px;">
+                        <input type="checkbox" id="alterarMarcaGlobal" style="width:24px; height:24px; border-radius:6px; accent-color:#0082C3; cursor:pointer; flex-shrink:0;" />
+                        <label for="alterarMarcaGlobal" style="font-size:1.05rem; color:#0082C3; font-weight:600; cursor:pointer; margin:0;">🏷️ Alterar Marca Global — aplicar <em>Brazil Home Living</em> a todos os produtos</label>
                     </div>
                 `;
+                // Salva produtos processados para download
+                window.decathlonProducts = data.products;
+                setTimeout(() => {
+                    // Checkbox global: marca/desmarca todos os checkboxes individuais
+                    const globalCb = document.getElementById('alterarMarcaGlobal');
+                    if (globalCb) {
+                        globalCb.addEventListener('change', () => {
+                            document.querySelectorAll('.alterar-marca-checkbox').forEach(cb => {
+                                cb.checked = globalCb.checked;
+                            });
+                        });
+                    }
+
+                    const btn = document.getElementById('customExcelDownloadBtn');
+                    if (btn) {
+                        btn.addEventListener('click', async () => {
+                            const checkboxes = document.querySelectorAll('.alterar-marca-checkbox');
+                            const alterar_marca_urls = [];
+                            checkboxes.forEach(cb => {
+                                if (cb.checked) alterar_marca_urls.push(cb.getAttribute('data-url'));
+                            });
+                            const produtos = (window.decathlonProducts || []);
+                            btn.disabled = true;
+                            btn.textContent = '⏳ Gerando Excel...';
+                            try {
+                                const resp = await fetch('/api/decathlon/generate-excel/', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ produtos, alterar_marca_urls })
+                                });
+                                if (!resp.ok) throw new Error('Erro ao gerar Excel');
+                                const blob = await resp.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'relatorio_decathlon.xlsx';
+                                document.body.appendChild(a);
+                                a.click();
+                                a.remove();
+                                window.URL.revokeObjectURL(url);
+                            } catch (e) {
+                                alert('Erro ao gerar Excel: ' + e.message);
+                            } finally {
+                                btn.disabled = false;
+                                btn.textContent = '⬇️ Baixar Excel';
+                            }
+                        });
+                    }
+                }, 100);
             }
 
             // 3. Renderização dos cards de produtos
@@ -157,6 +210,10 @@ function initDecathlonPage() {
                             <span style="font-size:1.3rem; color:#0082C3; font-weight:700; letter-spacing:0.5px;">Marca: ${p.marca || 'N/A'}</span>
                             <span style="font-size:1.3rem; color:#0082C3; font-weight:700; letter-spacing:0.5px;">Modelo: ${p.modelo || 'N/A'}</span>
                             <span style="font-size:1.3rem; color:#0082C3; font-weight:700; letter-spacing:0.5px;">EAN: ${p.ean || 'N/A'}</span>
+                            <label style="display:flex; align-items:center; gap:12px; font-size:1.2rem; color:#0082C3; font-weight:600; margin-top:6px;">
+                                <input type="checkbox" class="alterar-marca-checkbox" data-url="${p.url_original}" style="width:28px; height:28px; border-radius:8px; box-shadow:0 1px 6px rgba(0,130,195,0.15); accent-color:#0082C3;" />
+                                <span style="font-size:1.2rem;">Alterar Marca</span>
+                            </label>
                         </div>
                     </div>
 

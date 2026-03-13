@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.services.decathlon.schemas import ProductUrlRequest, ProductData, BatchResponse
@@ -20,6 +21,25 @@ TOKEN_IN_PRICE = (0.10 / 1_000_000) * USD_TO_BRL
 TOKEN_OUT_PRICE = (0.40 / 1_000_000) * USD_TO_BRL
 
 router = APIRouter(prefix="/api/decathlon", tags=["Decathlon"])
+
+@router.post("/generate-excel/")
+async def generate_excel(request: Request):
+    """
+    Gera Excel com marca alterada para URLs selecionadas.
+    Recebe JSON com 'produtos' e 'alterar_marca_urls'.
+    """
+    body = await request.json()
+    produtos = body.get('produtos', [])
+    alterar_marca_urls = body.get('alterar_marca_urls', [])
+    for p in produtos:
+        if p.get('url_original') in alterar_marca_urls:
+            p['marca'] = 'Brazil Home Living'
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    excel_filename = f"decathlon_produtos_{timestamp}.xlsx"
+    generate_standard_excel(produtos, excel_filename, settings.EXPORTS_DIR, "Decathlon", "0082C3")
+    excel_path = f"{settings.EXPORTS_DIR}/{excel_filename}"
+    return FileResponse(excel_path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=excel_filename)
+
 
 @router.post("/process-urls/", response_model=BatchResponse)
 async def process_product_urls(
