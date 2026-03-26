@@ -1,4 +1,5 @@
 import logging
+import re  # Importado para a lógica de substituição de texto
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import FileResponse
@@ -26,19 +27,41 @@ router = APIRouter(prefix="/api/decathlon", tags=["Decathlon"])
 async def generate_excel(request: Request):
     """
     Gera Excel com marca alterada para URLs selecionadas.
-    Recebe JSON com 'produtos' e 'alterar_marca_urls'.
+    Altera o campo Marca e limpa menções apenas na Descrição.
+    O Título permanece original conforme solicitado.
     """
     body = await request.json()
     produtos = body.get('produtos', [])
     alterar_marca_urls = body.get('alterar_marca_urls', [])
+    
     for p in produtos:
         if p.get('url_original') in alterar_marca_urls:
+            # 1. Salva a marca original antes de alterar
+            marca_original = p.get('marca', '').strip()
+            
+            # 2. Altera o campo Marca principal (coluna do Excel)
             p['marca'] = 'Brazil Home Living'
+            
+            # 3. Varredura na Descrição (Apenas se houver marca original e for diferente da nova)
+            if marca_original and marca_original.lower() != 'brazil home living':
+                descricao = p.get('descricao', '')
+                if descricao:
+                    # Busca a marca original ignorando maiúsculas/minúsculas e usando word boundaries (\b)
+                    pattern = re.compile(rf'\b{re.escape(marca_original)}\b', re.IGNORECASE)
+                    p['descricao'] = pattern.sub('Brazil Home Living', descricao)
+                    
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     excel_filename = f"decathlon_produtos_{timestamp}.xlsx"
+    
+    # Gera o Excel preservando o Título original, mas limpando Marca e Descrição
     generate_standard_excel(produtos, excel_filename, settings.EXPORTS_DIR, "Decathlon", "0082C3")
+    
     excel_path = f"{settings.EXPORTS_DIR}/{excel_filename}"
-    return FileResponse(excel_path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=excel_filename)
+    return FileResponse(
+        excel_path, 
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+        filename=excel_filename
+    )
 
 
 @router.post("/process-urls/", response_model=BatchResponse)

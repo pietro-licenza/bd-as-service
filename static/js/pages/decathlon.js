@@ -1,6 +1,6 @@
 /**
  * BD | AS Platform - Decathlon Integration
- * Versão Final: Proteção contra erros + Layout Premium
+ * Versão: 2.1 - Suporte a Alteração de Marca (Brazil Home Living) + Replace em Descrição
  */
 
 // Decathlon Page Template
@@ -76,6 +76,7 @@ function initDecathlonPage() {
         resultsDiv.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><p>Resultados limpos.</p></div>';
         batchSummary.innerHTML = '';
         downloadContainer.innerHTML = '';
+        window.decathlonProducts = [];
     });
 
     // Processamento de URLs
@@ -105,6 +106,9 @@ function initDecathlonPage() {
 
             const data = await response.json();
             
+            // Salva produtos processados globalmente para o download
+            window.decathlonProducts = data.products;
+
             // 1. Renderização da Barra de Investimento
             batchSummary.innerHTML = `
                 <div style="background:#0082C3; color:white; padding:1.2rem; border-radius:10px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 4px 12px rgba(0,0,0,0.15);">
@@ -113,7 +117,7 @@ function initDecathlonPage() {
                 </div>
             `;
 
-            // 2. Botão de Download do Excel
+            // 2. Renderização do Botão de Download do Excel e Checkbox Global
             if (data.excel_download_url) {
                 downloadContainer.innerHTML = `
                     <div class="download-card" style="background:rgba(0,130,195,0.1); border:1px solid #0082C3; padding:15px; border-radius:8px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
@@ -122,13 +126,12 @@ function initDecathlonPage() {
                     </div>
                     <div style="background:rgba(0,130,195,0.08); border:1px solid #0082C3; padding:12px 18px; border-radius:8px; margin-bottom:20px; display:flex; align-items:center; gap:14px;">
                         <input type="checkbox" id="alterarMarcaGlobal" style="width:24px; height:24px; border-radius:6px; accent-color:#0082C3; cursor:pointer; flex-shrink:0;" />
-                        <label for="alterarMarcaGlobal" style="font-size:1.05rem; color:#0082C3; font-weight:600; cursor:pointer; margin:0;">🏷️ Alterar Marca Global — aplicar <em>Brazil Home Living</em> a todos os produtos</label>
+                        <label for="alterarMarcaGlobal" style="font-size:1.05rem; color:#0082C3; font-weight:600; cursor:pointer; margin:0;">🏷️ Alterar Marca Global — aplicar <em>Brazil Home Living</em> e limpar descrição</label>
                     </div>
                 `;
-                // Salva produtos processados para download
-                window.decathlonProducts = data.products;
+
+                // Configura listeners após renderização
                 setTimeout(() => {
-                    // Checkbox global: marca/desmarca todos os checkboxes individuais
                     const globalCb = document.getElementById('alterarMarcaGlobal');
                     if (globalCb) {
                         globalCb.addEventListener('change', () => {
@@ -144,23 +147,29 @@ function initDecathlonPage() {
                             const checkboxes = document.querySelectorAll('.alterar-marca-checkbox');
                             const alterar_marca_urls = [];
                             checkboxes.forEach(cb => {
-                                if (cb.checked) alterar_marca_urls.push(cb.getAttribute('data-url'));
+                                if (cb.checked) {
+                                    alterar_marca_urls.push(cb.getAttribute('data-url'));
+                                }
                             });
+
                             const produtos = (window.decathlonProducts || []);
                             btn.disabled = true;
-                            btn.textContent = '⏳ Gerando Excel...';
+                            btn.textContent = '⏳ Processando Marcas...';
+
                             try {
                                 const resp = await fetch('/api/decathlon/generate-excel/', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ produtos, alterar_marca_urls })
                                 });
+                                
                                 if (!resp.ok) throw new Error('Erro ao gerar Excel');
+                                
                                 const blob = await resp.blob();
                                 const url = window.URL.createObjectURL(blob);
                                 const a = document.createElement('a');
                                 a.href = url;
-                                a.download = 'relatorio_decathlon.xlsx';
+                                a.download = `bhl_decathlon_export_${new Date().getTime()}.xlsx`;
                                 document.body.appendChild(a);
                                 a.click();
                                 a.remove();
@@ -183,7 +192,6 @@ function initDecathlonPage() {
             }
 
             resultsDiv.innerHTML = data.products.map(p => {
-                // Caso o item venha com erro do Scraper/Backend
                 if (p.error) {
                     return `
                     <div class="product-result error" style="border-left: 4px solid #ef4444;">
@@ -196,7 +204,6 @@ function initDecathlonPage() {
                     </div>`;
                 }
                 
-                // Proteção contra descrição nula
                 const formattedDesc = p.descricao ? p.descricao.replace(/\n/g, '<br>') : "Descrição não disponível.";
 
                 return `
@@ -207,12 +214,13 @@ function initDecathlonPage() {
                             <span class="badge" style="background:rgba(59,130,246,0.1); color:#3b82f6;">Investimento: ${formatBRL(p.total_cost_brl)}</span>
                         </div>
                         <div style="margin-top:0.7rem; display:flex; flex-direction:column; gap:6px; background:rgba(30,30,30,0.18); border-radius:8px; padding:8px 18px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-                            <span style="font-size:1.3rem; color:#0082C3; font-weight:700; letter-spacing:0.5px;">Marca: ${p.marca || 'N/A'}</span>
+                            <span style="font-size:1.3rem; color:#0082C3; font-weight:700; letter-spacing:0.5px;">Marca Original: ${p.marca || 'N/A'}</span>
                             <span style="font-size:1.3rem; color:#0082C3; font-weight:700; letter-spacing:0.5px;">Modelo: ${p.modelo || 'N/A'}</span>
                             <span style="font-size:1.3rem; color:#0082C3; font-weight:700; letter-spacing:0.5px;">EAN: ${p.ean || 'N/A'}</span>
-                            <label style="display:flex; align-items:center; gap:12px; font-size:1.2rem; color:#0082C3; font-weight:600; margin-top:6px;">
-                                <input type="checkbox" class="alterar-marca-checkbox" data-url="${p.url_original}" style="width:28px; height:28px; border-radius:8px; box-shadow:0 1px 6px rgba(0,130,195,0.15); accent-color:#0082C3;" />
-                                <span style="font-size:1.2rem;">Alterar Marca</span>
+                            
+                            <label style="display:flex; align-items:center; gap:12px; font-size:1.2rem; color:#0082C3; font-weight:600; margin-top:6px; cursor:pointer;">
+                                <input type="checkbox" class="alterar-marca-checkbox" data-url="${p.url_original}" style="width:28px; height:28px; border-radius:8px; box-shadow:0 1px 6px rgba(0,130,195,0.15); accent-color:#0082C3; cursor:pointer;" />
+                                <span style="font-size:1.2rem;">Aplicar Marca Brazil Home Living</span>
                             </label>
                         </div>
                     </div>

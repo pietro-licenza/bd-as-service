@@ -1,12 +1,13 @@
 """
 API routes for Sodimac product processing service with cost tracking.
 Versão Final: Integração total com Supabase, Segurança e Relatório Excel.
+Incluso: Lógica de substituição de marca (Brazil Home Living) na descrição.
 """
 
 from fastapi import Request
 from fastapi.responses import FileResponse
 import logging
-import re  # Importado para o tratamento das URLs de imagem
+import re  # Importado para tratamento de URLs de imagem e substituição de texto
 from typing import List
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
@@ -27,7 +28,6 @@ from app.shared.excel_generator import generate_standard_excel
 logger = logging.getLogger(__name__)
 
 # --- PREÇO REAL POR TOKEN (GOOGLE GEMINI 2.0 FLASH) ---
-#
 USD_TO_BRL = 5.10 
 PRICE_IN = (0.10 / 1_000_000) * USD_TO_BRL  # Entrada: $0.10 por 1M
 PRICE_OUT = (0.40 / 1_000_000) * USD_TO_BRL # Saída: $0.40 por 1M
@@ -38,19 +38,41 @@ router = APIRouter(prefix="/api/sodimac", tags=["Sodimac"])
 async def generate_excel(request: Request):
     """
     Gera Excel com marca alterada para URLs selecionadas.
-    Recebe JSON com 'produtos' e 'alterar_marca_urls'.
+    Altera o campo Marca e limpa menções apenas na Descrição.
+    O Título permanece original conforme solicitado.
     """
     body = await request.json()
     produtos = body.get('produtos', [])
     alterar_marca_urls = body.get('alterar_marca_urls', [])
+
     for p in produtos:
         if p.get('url_original') in alterar_marca_urls:
+            # 1. Salva a marca original antes de alterar
+            marca_original = p.get('marca', '').strip()
+            
+            # 2. Altera o campo Marca principal (coluna do Excel)
             p['marca'] = 'Brazil Home Living'
+            
+            # 3. Varredura na Descrição (Apenas se houver marca original e for diferente da nova)
+            if marca_original and marca_original.lower() != 'brazil home living':
+                descricao = p.get('descricao', '')
+                if descricao:
+                    # Busca a marca original ignorando maiúsculas/minúsculas e usando word boundaries
+                    pattern = re.compile(rf'\b{re.escape(marca_original)}\b', re.IGNORECASE)
+                    p['descricao'] = pattern.sub('Brazil Home Living', descricao)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     excel_filename = f"sodimac_produtos_{timestamp}.xlsx"
+    
+    # Gera o Excel com Marca e Descrição processados (Título preservado)
     generate_standard_excel(produtos, excel_filename, settings.EXPORTS_DIR, "Sodimac", "FF6B35")
+    
     excel_path = f"{settings.EXPORTS_DIR}/{excel_filename}"
-    return FileResponse(excel_path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=excel_filename)
+    return FileResponse(
+        excel_path, 
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+        filename=excel_filename
+    )
 
 
 @router.post("/process-urls/", response_model=BatchResponse)

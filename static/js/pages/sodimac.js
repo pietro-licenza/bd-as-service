@@ -1,6 +1,6 @@
 /**
  * BD | AS Platform - Sodimac Integration
- * Versão Completa: Visual Padronizado + Logs de Custo + Imagens HD + Download Excel
+ * Versão: 2.1 - Suporte a Alteração de Marca (Brazil Home Living) + Replace em Descrição
  */
 
 // Sodimac Page Template
@@ -40,7 +40,8 @@ const SodimacTemplate = () => `
 
     <div class="results-section">
         <div id="batchSummary" style="margin-bottom: 1.5rem;"></div>
-        <div id="downloadContainer"></div> <h2>📊 Resultados</h2>
+        <div id="downloadContainer"></div>
+        <h2>📊 Resultados</h2>
         <div id="results">
             <div class="empty-state">
                 <div class="empty-state-icon">📭</div>
@@ -83,6 +84,7 @@ function initSodimacPage() {
         resultsDiv.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><p>Resultados limpos.</p></div>';
         batchSummary.innerHTML = '';
         downloadContainer.innerHTML = '';
+        window.sodimacProducts = [];
         AppState.resultCounter = 1;
     });
 
@@ -113,6 +115,9 @@ function initSodimacPage() {
             if (!response.ok) throw new Error(`Erro HTTP: ${response.status}`);
             const data = await response.json();
             
+            // Salva produtos processados globalmente
+            window.sodimacProducts = data.products;
+
             // 1. Barra de Investimento (Laranja Sodimac)
             batchSummary.innerHTML = `
                 <div style="background:#FF6B35; color:white; padding:1.2rem; border-radius:10px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 4px 12px rgba(0,0,0,0.15);">
@@ -121,7 +126,7 @@ function initSodimacPage() {
                 </div>
             `;
 
-            // 2. Botão de Download Excel
+            // 2. Botão de Download Excel e Checkbox Global
             if (data.excel_download_url) {
                 downloadContainer.innerHTML = `
                     <div class="download-card" style="background:rgba(255,107,53,0.05); border:1px solid #FF6B35; padding:15px; border-radius:8px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
@@ -130,11 +135,12 @@ function initSodimacPage() {
                     </div>
                     <div style="background:rgba(255,107,53,0.08); border:1px solid #FF6B35; padding:12px 18px; border-radius:8px; margin-bottom:20px; display:flex; align-items:center; gap:14px;">
                         <input type="checkbox" id="alterarMarcaGlobal" style="width:24px; height:24px; border-radius:6px; accent-color:#FF6B35; cursor:pointer; flex-shrink:0;" />
-                        <label for="alterarMarcaGlobal" style="font-size:1.05rem; color:#FF6B35; font-weight:600; cursor:pointer; margin:0;">🏷️ Alterar Marca Global — aplicar <em>Brazil Home Living</em> a todos os produtos</label>
+                        <label for="alterarMarcaGlobal" style="font-size:1.05rem; color:#FF6B35; font-weight:600; cursor:pointer; margin:0;">🏷️ Alterar Marca Global — aplicar <em>Brazil Home Living</em> e limpar descrição</label>
                     </div>
                 `;
+
+                // Adiciona lógica após renderização
                 setTimeout(() => {
-                    // Checkbox global: marca/desmarca todos os checkboxes individuais
                     const globalCb = document.getElementById('alterarMarcaGlobal');
                     if (globalCb) {
                         globalCb.addEventListener('change', () => {
@@ -147,7 +153,6 @@ function initSodimacPage() {
                     const btn = document.getElementById('customExcelDownloadBtn');
                     if (btn) {
                         btn.addEventListener('click', async () => {
-                            // Captura produtos com checkbox marcado
                             const checkboxes = document.querySelectorAll('.alterar-marca-checkbox');
                             const alterar_marca_urls = [];
                             checkboxes.forEach(cb => {
@@ -155,22 +160,25 @@ function initSodimacPage() {
                                     alterar_marca_urls.push(cb.getAttribute('data-url'));
                                 }
                             });
-                            // Captura todos os produtos processados
+
                             const produtos = (window.sodimacProducts || []);
                             btn.disabled = true;
-                            btn.textContent = '⏳ Gerando Excel...';
+                            btn.textContent = '⏳ Processando Marcas...';
+
                             try {
                                 const resp = await fetch('/api/sodimac/generate-excel/', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ produtos, alterar_marca_urls })
                                 });
+                                
                                 if (!resp.ok) throw new Error('Erro ao gerar Excel');
+                                
                                 const blob = await resp.blob();
                                 const url = window.URL.createObjectURL(blob);
                                 const a = document.createElement('a');
                                 a.href = url;
-                                a.download = 'relatorio_sodimac.xlsx';
+                                a.download = `bhl_sodimac_export_${new Date().getTime()}.xlsx`;
                                 document.body.appendChild(a);
                                 a.click();
                                 a.remove();
@@ -188,7 +196,6 @@ function initSodimacPage() {
 
             // 3. Renderização dos Resultados
             resultsDiv.innerHTML = '';
-            window.sodimacProducts = data.products;
             data.products.forEach(p => {
                 const isError = !!p.error;
                 const resultId = AppState.resultCounter++;
@@ -196,6 +203,7 @@ function initSodimacPage() {
                     let cleanUrl = url.split(',')[0].trim();
                     return cleanUrl.replace(/w=(76|120)/, 'w=1036');
                 });
+
                 const resultHTML = `
                 <div class="product-result ${isError ? 'error' : ''}" id="result-${resultId}">
                     <div style="display:flex; flex-direction:column; margin-bottom:1rem;">
@@ -205,11 +213,12 @@ function initSodimacPage() {
                         </div>
                         ${!isError ? `
                         <div style="margin-top:0.7rem; display:flex; flex-direction:column; gap:6px; background:rgba(255,107,53,0.08); border-radius:8px; padding:8px 18px; box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-                            <span style="font-size:1.3rem; color:#FF6B35; font-weight:700; letter-spacing:0.5px;">Marca: ${p.marca}</span>
-                            <span style="font-size:1.3rem; color:#FF6B35; font-weight:700; letter-spacing:0.5px;">Modelo: ${p.modelo}</span>
-                            <label style="display:flex; align-items:center; gap:12px; font-size:1.2rem; color:#FF6B35; font-weight:600; margin-top:6px;">
-                                <input type="checkbox" class="alterar-marca-checkbox" data-url="${p.url_original}" style="width:28px; height:28px; border-radius:8px; box-shadow:0 1px 6px rgba(255,107,53,0.15); accent-color:#FF6B35;" />
-                                <span style="font-size:1.2rem;">Alterar Marca</span>
+                            <span style="font-size:1.3rem; color:#FF6B35; font-weight:700; letter-spacing:0.5px;">Marca Original: ${p.marca || 'Não identificada'}</span>
+                            <span style="font-size:1.3rem; color:#FF6B35; font-weight:700; letter-spacing:0.5px;">Modelo: ${p.modelo || 'N/A'}</span>
+                            
+                            <label style="display:flex; align-items:center; gap:12px; font-size:1.2rem; color:#FF6B35; font-weight:600; margin-top:6px; cursor:pointer;">
+                                <input type="checkbox" class="alterar-marca-checkbox" data-url="${p.url_original}" style="width:28px; height:28px; border-radius:8px; box-shadow:0 1px 6px rgba(255,107,53,0.15); accent-color:#FF6B35; cursor:pointer;" />
+                                <span style="font-size:1.2rem;">Aplicar Marca Brazil Home Living</span>
                             </label>
                         </div>
                         ` : ''}
@@ -239,8 +248,10 @@ function initSodimacPage() {
                             </div>
                             <div style="display:flex; gap:12px; overflow-x:auto; padding-bottom:10px; scrollbar-width: thin;">
                                 ${hdImages.map(img => `
-                                    <img src="${img}" style="height:120px; border-radius:8px; border:1px solid #333; cursor:pointer;" 
-                                         onclick="window.open('${img}')" title="Clique para ver em 1036px">
+                                    <img src="${img}" style="height:120px; border-radius:8px; border:1px solid #333; cursor:pointer; transition:transform 0.2s;" 
+                                         onclick="window.open('${img}')" title="Clique para ver em 1036px"
+                                         onmouseover="this.style.transform='scale(1.05)'" 
+                                         onmouseout="this.style.transform='scale(1)'">
                                 `).join('')}
                             </div>
                         `}

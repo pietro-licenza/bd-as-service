@@ -1,5 +1,5 @@
-
 import logging
+import re
 from typing import List
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Request
@@ -15,7 +15,6 @@ from app.core.database import get_db
 from app.models.entities import ScrapingLog
 
 # --- CONFIGURAÇÃO DE CUSTO REAL POR TOKEN (GEMINI 2.0 FLASH) ---
-#
 USD_TO_BRL = 5.10             # Câmbio base para conversão
 PRICE_INPUT_1M_USD = 0.10     # Preço por 1M de tokens de entrada
 PRICE_OUTPUT_1M_USD = 0.40    # Preço por 1M de tokens de saída
@@ -30,19 +29,42 @@ router = APIRouter(prefix="/api/leroy-merlin", tags=["Leroy Merlin"])
 async def generate_excel(request: Request):
     """
     Gera Excel com marca alterada para URLs selecionadas.
-    Recebe JSON com 'produtos' e 'alterar_marca_urls'.
+    Altera o campo Marca e limpa menções na Descrição.
     """
     body = await request.json()
     produtos = body.get('produtos', [])
     alterar_marca_urls = body.get('alterar_marca_urls', [])
+
     for p in produtos:
         if p.get('url_original') in alterar_marca_urls:
+            # 1. Salva a marca original antes de alterar
+            marca_original = p.get('marca', '').strip()
+            
+            # 2. Altera o campo Marca principal
             p['marca'] = 'Brazil Home Living'
+            
+            # 3. Varredura na Descrição
+            # Se houver marca original e ela não for a nova marca, fazemos o replace
+            if marca_original and marca_original.lower() != 'brazil home living':
+                descricao = p.get('descricao', '')
+                if descricao:
+                    # Usamos regex com \b (word boundary) para garantir que estamos trocando a palavra exata
+                    # e re.IGNORECASE para pegar "BOSCH", "Bosch", etc.
+                    pattern = re.compile(rf'\b{re.escape(marca_original)}\b', re.IGNORECASE)
+                    p['descricao'] = pattern.sub('Brazil Home Living', descricao)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     excel_filename = f"leroy_produtos_{timestamp}.xlsx"
+    
+    # Chama o gerador padrão com os dados já limpos
     generate_standard_excel(produtos, excel_filename, settings.EXPORTS_DIR, "Leroy Merlin", "00A859")
+    
     excel_path = f"{settings.EXPORTS_DIR}/{excel_filename}"
-    return FileResponse(excel_path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=excel_filename)
+    return FileResponse(
+        excel_path, 
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+        filename=excel_filename
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +97,6 @@ async def process_product_urls(
             usage = gemini_res.get("usage", {"input": 0, "output": 0})
 
             # --- CÁLCULO FINANCEIRO BASEADO EM TOKENS REAIS ---
-            # 1. Custo dos Tokens reportados pela API
             c_in = usage["input"] * TOKEN_IN_PRICE
             c_out = usage["output"] * TOKEN_OUT_PRICE
             item_cost = c_in + c_out
@@ -122,7 +143,7 @@ async def process_product_urls(
             db.rollback()
             logger.error(f"❌ Erro log Leroy: {db_err}")
 
-    # Geração do Excel
+    # Geração do Excel inicial (Sem alteração de marca por padrão no processamento)
     excel_url = None
     if excel_data:
         try:
