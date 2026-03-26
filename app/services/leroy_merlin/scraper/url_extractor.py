@@ -540,6 +540,86 @@ def extract_model_from_html(html: str, product_url: str = None) -> Optional[str]
     return "Modelo não encontrado"
 
 
+def extract_dimensions_from_html(html: str) -> Dict[str, Optional[str]]:
+    """
+    Extract product physical dimensions from HTML.
+
+    Looks for these fields (case-insensitive): Altura, Largura, Profundidade,
+    Comprimento, Peso do Produto (also "Peso").
+
+    Strategies:
+    1. JSON "characteristics" array embedded in the page (fastest)
+    2. HTML <th>/<td> specification table (fallback)
+
+    Args:
+        html: HTML content of the product page
+
+    Returns:
+        Dictionary with keys: altura, largura, profundidade, comprimento, peso
+        Each value is a string (e.g. "2,55 m") or None if not found.
+    """
+    logger.info("🔍 Extracting dimensions from HTML...")
+
+    FIELDS = {
+        "altura":       re.compile(r'^altura$', re.IGNORECASE),
+        "largura":      re.compile(r'^largura$', re.IGNORECASE),
+        "profundidade": re.compile(r'^profundidade$', re.IGNORECASE),
+        "comprimento":  re.compile(r'^comprimento$', re.IGNORECASE),
+        "peso":         re.compile(r'^peso', re.IGNORECASE),
+    }
+
+    result: Dict[str, Optional[str]] = {k: None for k in FIELDS}
+
+    def _match_field(name: str) -> Optional[str]:
+        for key, pattern in FIELDS.items():
+            if pattern.match(name.strip()):
+                return key
+        return None
+
+    # =========================================================================
+    # STRATEGY 1: JSON "characteristics" block
+    # =========================================================================
+    try:
+        carac_match = re.search(r'"characteristics"\s*:\s*\[(.*?)\]', html, re.DOTALL)
+        if carac_match:
+            items = re.findall(r'\{"name"\s*:\s*"([^"]+)"\s*,\s*"value"\s*:\s*"([^"]+)"\}', carac_match.group(1))
+            for name, value in items:
+                key = _match_field(name)
+                if key and result[key] is None:
+                    result[key] = value.strip()
+                    logger.info(f"✅ {key} from JSON characteristics: {value.strip()}")
+    except Exception as e:
+        logger.debug(f"⚠️  Strategy 1 (characteristics JSON) failed: {e}")
+
+    # Check if all fields found already
+    if all(v is not None for v in result.values()):
+        return result
+
+    # =========================================================================
+    # STRATEGY 2: HTML <th><strong>Label</strong></th><td>Value</td> table
+    # =========================================================================
+    try:
+        import bs4
+        soup = bs4.BeautifulSoup(html, 'html.parser')
+        for th in soup.find_all('th'):
+            label_text = th.get_text(strip=True)
+            key = _match_field(label_text)
+            if key and result[key] is None:
+                td = th.find_next_sibling('td')
+                if td:
+                    value = td.get_text(strip=True)
+                    result[key] = value
+                    logger.info(f"✅ {key} from HTML table: {value}")
+    except Exception as e:
+        logger.debug(f"⚠️  Strategy 2 (HTML table) failed: {e}")
+
+    missing = [k for k, v in result.items() if v is None]
+    if missing:
+        logger.warning(f"⚠️  Dimensions not found: {missing}")
+
+    return result
+
+
 def extract_product_data(product_url: str) -> Dict[str, any]:
     """
     Extract complete product data (title, prices, images, brand, EAN) from a Leroy Merlin URL.
@@ -584,13 +664,14 @@ def extract_product_data(product_url: str) -> Dict[str, any]:
         marca = extract_brand_from_html(html)
         ean = extract_ean_from_html(html)
         modelo = extract_model_from_html(html, product_url)
-        
+        dimensoes = extract_dimensions_from_html(html)
+
         # Extract images using the improved extractor (single point of truth)
         logger.info("🔍 Extracting images using improved extractor...")
         image_urls = extract_images_1800(product_url)
         if image_urls:
             logger.info(f"✅ {len(image_urls)} images found")
-        
+
         result = {
             "url": product_url,
             "titulo": titulo or "",
@@ -598,6 +679,11 @@ def extract_product_data(product_url: str) -> Dict[str, any]:
             "marca": marca,
             "ean": ean,
             "modelo": modelo,
+            "altura": dimensoes.get("altura"),
+            "largura": dimensoes.get("largura"),
+            "profundidade": dimensoes.get("profundidade"),
+            "comprimento": dimensoes.get("comprimento"),
+            "peso": dimensoes.get("peso"),
             "image_urls": image_urls,
             "success": bool(titulo and preco),
         }

@@ -30,6 +30,14 @@ class ProductData(BaseModel):
     descricao: Optional[str] = None
     image_urls: List[str] = []
     url_original: str
+
+    # Novos campos de dimensões e peso
+    largura_cm: Optional[str] = None
+    comprimento_cm: Optional[str] = None
+    altura_cm: Optional[str] = None
+    dimensoes_lca: Optional[str] = None
+    peso_kg: Optional[str] = None
+
     # Novos campos que o FastAPI precisa permitir a passagem:
     input_tokens: int = 0
     output_tokens: int = 0

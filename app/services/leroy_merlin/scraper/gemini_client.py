@@ -1,6 +1,6 @@
 """
 Gemini API client for Leroy Merlin product data extraction (SDK 2026).
-Versão Final Corrigida: Ajuste de Atributos Settings + Extração de Metadados + Retry.
+Versão: Dual Prompting - Chamadas separadas para Descrição e Dimensões Técnicas (com Specs).
 """
 import logging
 import json
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class LeroyMerlinGeminiClient:
     """
     Client robusto para interação com a API Gemini para Leroy Merlin.
-    Gerencia extração de metadados, geração de descrições e controle de custos.
+    Gerencia extração de metadados, geração de descrições, dimensões e controle de custos.
     """
     
     def __init__(self):
@@ -74,20 +74,11 @@ class LeroyMerlinGeminiClient:
     def extract_model_from_url(self, product_url: str) -> Optional[str]:
         """
         Extrai APENAS o nome/código do modelo do produto usando IA.
-        Usado como fallback quando regex não encontra o campo 'Modelo'.
-        
-        Custo estimado: ~$0.000014 por produto (muito barato!).
-        
-        Args:
-            product_url: URL do produto da Leroy Merlin
-            
-        Returns:
-            Nome do modelo ou None se falhar
         """
         logger.info(f"🤖 [Fallback Gemini] Extraindo modelo de: {product_url}")
         prompt = self._build_model_extraction_prompt(product_url)
         
-        max_retries = 2  # Menos retries pois é fallback
+        max_retries = 2
         retry_delay = 1
 
         for attempt in range(max_retries):
@@ -97,35 +88,27 @@ class LeroyMerlinGeminiClient:
                     contents=prompt
                 )
                 
-                # Extrai apenas o texto limpo (sem JSON, sem formatação)
                 model = response.text.strip()
-                
-                # Remove aspas, quebras de linha e espaços extras
                 model = model.replace('"', '').replace("'", "").replace('\n', ' ').strip()
                 
-                # Remove textos comuns que não são o modelo
                 if model and len(model) > 0 and model.lower() not in ['null', 'none', 'não encontrado', 'n/a']:
                     logger.info(f"✅ Modelo extraído pelo Gemini: {model}")
                     return model
                 else:
-                    logger.warning("⚠️ Gemini não encontrou o modelo")
                     return None
 
             except Exception as e:
-                if "503" in str(e) or "429" in str(e):
-                    if attempt < max_retries - 1:
-                        logger.warning(f"⚠️ Google ocupado (Tentativa {attempt+1}). Retentando...")
-                        time.sleep(retry_delay)
-                        retry_delay *= 2
-                        continue
-                logger.error(f"❌ Falha na extração de modelo: {str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
                 return None
         
         return None
 
     def extract_description_from_url(self, product_url: str, titulo: str) -> Dict[str, any]:
         """
-        Gera descrição profissional e captura metadados de tokens para custo.
+        Gera APENAS a descrição profissional (Copywriting).
         """
         logger.info(f"🤖 [IA Copywriter] Gerando texto para: {titulo}")
         prompt = self._build_description_prompt(product_url, titulo)
@@ -140,7 +123,6 @@ class LeroyMerlinGeminiClient:
                     contents=prompt
                 )
                 
-                # Captura de tokens para o dashboard financeiro
                 usage = response.usage_metadata
                 u_data = {
                     "input": int(usage.prompt_token_count or 0),
@@ -156,11 +138,10 @@ class LeroyMerlinGeminiClient:
                 }
 
             except Exception as e:
-                if "503" in str(e) or "429" in str(e):
-                    if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
-                        retry_delay *= 2
-                        continue
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
                 logger.error(f"❌ Falha na descrição: {str(e)}")
                 return {"descricao": "", "usage": {"input": 0, "output": 0}}
 
@@ -168,7 +149,6 @@ class LeroyMerlinGeminiClient:
         """Processamento sequencial de URLs para integração com rotas antigas."""
         results = []
         for idx, url in enumerate(product_urls, 1):
-            logger.info(f"📑 Processando item {idx} de {len(product_urls)}")
             data = self.extract_product_data_from_url(url)
             data["url_original"] = url
             results.append(data)
@@ -203,31 +183,20 @@ class LeroyMerlinGeminiClient:
         """Constrói o prompt MINIMALISTA para extrair apenas o modelo."""
         return f"""
         URL: {product_url}
-        
-        TAREFA: Acesse esta URL da Leroy Merlin e identifique APENAS o nome ou código do MODELO do produto, sem mencionar a marca.
-        
-        REGRAS:
-        1. Retorne SOMENTE o nome/código do modelo, nada mais
-        2. Não retorne marca, cor, tamanho ou outras características
-        3. Se não encontrar o modelo, retorne: "Modelo não encontrado"
-        4. Sem JSON, sem formatação, apenas o texto puro
-        
-        EXEMPLO:
-        - Se o produto for "Mesa Dobrável Solarium Naterial", retorne: "Solarium", pois Naterial é a marca do mesmo.
-        - Se o produto for "Roçadeira TBC43X Toyama", retorne: "TBC43X"
+        TAREFA: Acesse esta URL e identifique APENAS o nome ou código do MODELO do produto.
         """
 
     def _build_description_prompt(self, product_url: str, titulo: str) -> str:
-        """Constrói o prompt para copywriting profissional."""
+        """Constrói o prompt focado exclusivamente em copywriting profissional."""
         return f"""
-        TAREFA: Copywriter de alta conversão.
+        TAREFA: Especialista em Copywriting de E-commerce.
         PRODUTO: {titulo}
         URL: {product_url}
         
-        Crie uma descrição com 3 parágrafos claros:
-        - Design e aparência.
-        - Benefícios técnicos.
-        - Onde e como usar.
+        Crie uma descrição profissional com 3 parágrafos claros:
+        - Design e estética.
+        - Diferenciais técnicos e qualidade.
+        - Sugestões de uso e benefícios reais.
         
         REGRAS: Sem emojis, sem HTML, sem preços, sem citar a loja Leroy Merlin.
         RETORNE JSON:
