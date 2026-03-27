@@ -1,6 +1,7 @@
 """
 Web routes for serving HTML pages - Fixed Version
 """
+import logging
 from fastapi import APIRouter, Request, Depends, status
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
@@ -10,6 +11,8 @@ import os
 from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Web Pages"])
 templates = Jinja2Templates(directory=str(settings.TEMPLATES_DIR))
@@ -32,8 +35,9 @@ async def home(request: Request, db: Session = Depends(get_db)):
             "request": request, 
             "user": current_user
         })
-    except Exception:
-        # Se o token for inválido ou expirado, manda para o login
+    except Exception as e:
+        # Log do erro real para diagnóstico nos logs do Cloud Run
+        logger.error(f"[HOME] Falha ao autenticar ou renderizar home: {type(e).__name__}: {e}")
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
 @router.get("/login", response_class=HTMLResponse)
