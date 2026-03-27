@@ -44,6 +44,8 @@ async def login(
     # Define o Cookie para o navegador manter a sessão
     # K_SERVICE é definido automaticamente pelo Cloud Run (produção = HTTPS)
     is_production = os.getenv("K_SERVICE") is not None
+    # Deleta o cookie antigo (sem Secure) para evitar duplicata no browser
+    response.delete_cookie(key="access_token", path="/", samesite="lax")
     response.set_cookie(
         key="access_token",
         value=access_token,
