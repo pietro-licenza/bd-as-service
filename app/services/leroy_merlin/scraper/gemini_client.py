@@ -193,11 +193,13 @@ class LeroyMerlinGeminiClient:
         PRODUTO: {titulo}
         URL: {product_url}
         
-        Crie uma descrição profissional com 3 parágrafos claros:
+        Crie uma descrição profissional de 3 a 5parágrafos claros:
         - Design e estética.
         - Diferenciais técnicos e qualidade.
         - Sugestões de uso e benefícios reais.
-        
+	    - Ao final da descrição, insira um resumo linha-a-linha com as principais características do produto (dimensoes, peso, potencia, utilidades, etc., conforme aplicável).
+	    - Caso seja um kit ou conjunto, acrescente um parágrafo para indicar o que está incluso no kit (bem como dimensões de cada um dos produtos que compõe o kit, conforme aplicável).
+
         REGRAS: Sem emojis, sem HTML, sem preços, sem citar a loja Leroy Merlin.
         RETORNE JSON:
         {{ "descricao": "..." }}

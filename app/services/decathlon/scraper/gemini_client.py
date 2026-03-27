@@ -136,21 +136,22 @@ class DecathlonGeminiClient:
         """
 
     def _build_description_prompt(self, product_url: str, titulo: str) -> str:
+        """Constrói o prompt focado exclusivamente em copywriting profissional."""
         return f"""
-        TAREFA: Copywriter para Decathlon (artigos esportivos).
+        TAREFA: Especialista em Copywriting de E-commerce.
         PRODUTO: {titulo}
         URL: {product_url}
+        
+        Crie uma descrição profissional de 3 a 5parágrafos claros:
+        - Design e estética.
+        - Diferenciais técnicos e qualidade.
+        - Sugestões de uso e benefícios reais.
+	    - Ao final da descrição, insira um resumo linha-a-linha com as principais características do produto (dimensoes, peso, potencia, utilidades, etc., conforme aplicável).
+	    - Caso seja um kit ou conjunto, acrescente um parágrafo para indicar o que está incluso no kit (bem como dimensões de cada um dos produtos que compõe o kit, conforme aplicável).
 
-        Crie uma descrição profissional com MÍNIMO 3 parágrafos:
-        1. Design e ergonomia (conforto e estética).
-        2. Diferenciais técnicos (tecnologias e performance).
-        3. Experiência de uso (onde e como usar).
-
-        REGRAS: Tom técnico-esportivo, sem emojis, sem HTML, sem preços.
-        Não cite o nome da loja Decathlon.
-
-        FORMATO JSON:
-        {{"descricao": "Texto completo aqui..."}}
+        REGRAS: Sem emojis, sem HTML, sem preços, sem citar a loja Leroy Merlin.
+        RETORNE JSON:
+        {{ "descricao": "..." }}
         """
 
 # Singleton instance

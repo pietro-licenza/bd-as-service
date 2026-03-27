@@ -217,21 +217,22 @@ class SodimacGeminiClient:
         """
 
     def _build_description_prompt(self, product_url: str, titulo: str) -> str:
+        """Constrói o prompt focado exclusivamente em copywriting profissional."""
         return f"""
-        TAREFA: Copywriter para Sodimac.
+        TAREFA: Especialista em Copywriting de E-commerce.
         PRODUTO: {titulo}
         URL: {product_url}
+        
+        Crie uma descrição profissional de 3 a 5parágrafos claros:
+        - Design e estética.
+        - Diferenciais técnicos e qualidade.
+        - Sugestões de uso e benefícios reais.
+	    - Ao final da descrição, insira um resumo linha-a-linha com as principais características do produto (dimensoes, peso, potencia, utilidades, etc., conforme aplicável).
+	    - Caso seja um kit ou conjunto, acrescente um parágrafo para indicar o que está incluso no kit (bem como dimensões de cada um dos produtos que compõe o kit, conforme aplicável).
 
-        Crie uma descrição profissional com MÍNIMO 3 parágrafos:
-        1. Aspectos físicos e design.
-        2. Funcionalidades e diferenciais técnicos.
-        3. Usos recomendados e benefícios.
-
-        REGRAS: Tom impessoal, sem emojis, sem HTML, sem preços.
-        Inclua resumo técnico linha a linha no final do texto.
-
-        FORMATO JSON:
-        {{"descricao": "Texto completo aqui..."}}
+        REGRAS: Sem emojis, sem HTML, sem preços, sem citar a loja Leroy Merlin.
+        RETORNE JSON:
+        {{ "descricao": "..." }}
         """
 
 # Singleton instance
