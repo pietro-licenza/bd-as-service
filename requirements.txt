@@ -1,32 +1,32 @@
 # Web & Server
-fastapi
-uvicorn
-python-multipart
+fastapi==0.128.0
+uvicorn==0.40.0
+python-multipart==0.0.22
 
 # Google & AI
-google-genai
-google-cloud-storage
-google-cloud-secret-manager
+google-genai==1.61.0
+google-cloud-storage==3.9.0
+google-cloud-secret-manager==2.26.0
 
 # Segurança (Ajustado para evitar o erro de 72 bytes)
 bcrypt==4.0.1
 passlib[bcrypt]==1.7.4
-python-jose[cryptography]
+python-jose[cryptography]==3.5.0
 
 # Processamento de Dados & Templates
-Pillow
-openpyxl
-jinja2
+Pillow==12.1.0
+openpyxl==3.1.5
+jinja2==3.1.6
 pyyaml
-requests
-beautifulsoup4
-pydantic-settings
+requests==2.32.5
+beautifulsoup4==4.14.3
+pydantic==2.12.5
+pydantic-settings==2.12.0
 email-validator>=2.0.0
 
 # Database
 sqlalchemy==2.0.27
 psycopg2-binary==2.9.9
-passlib[bcrypt]==1.7.4
 
 # Agendamentos
-apscheduler
+apscheduler==3.11.2

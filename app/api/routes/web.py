@@ -36,8 +36,9 @@ async def home(request: Request, db: Session = Depends(get_db)):
             "user": current_user
         })
     except Exception as e:
-        # Log do erro real para diagnóstico nos logs do Cloud Run
-        logger.error(f"[HOME] Falha ao autenticar ou renderizar home: {type(e).__name__}: {e}")
+        import traceback
+        # Log do erro real com traceback completo para diagnóstico nos logs do Cloud Run
+        logger.error(f"[HOME] Falha ao autenticar ou renderizar home: {type(e).__name__}: {e}\n{traceback.format_exc()}")
         return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
 
 @router.get("/login", response_class=HTMLResponse)
