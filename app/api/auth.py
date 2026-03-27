@@ -4,6 +4,7 @@ from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from datetime import timedelta
 from jose import JWTError, jwt  # Necessário para decodificar o token
+import os
 
 from app.core.auth import authenticate_user, create_access_token
 from app.core.database import get_db
@@ -41,13 +42,15 @@ async def login(
         )
     
     # Define o Cookie para o navegador manter a sessão
+    # K_SERVICE é definido automaticamente pelo Cloud Run (produção = HTTPS)
+    is_production = os.getenv("K_SERVICE") is not None
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
         max_age=60 * 60 * 24, # 1 dia
         samesite="lax",
-        secure=False 
+        secure=is_production
     )
     
     return {
