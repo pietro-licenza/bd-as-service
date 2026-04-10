@@ -35,7 +35,7 @@ def _fetch(url: str, headers: dict, timeout: int = 20):
     api_key = settings.SCRAPER_API_KEY
     if api_key:
         proxy_url = f"http://api.scraperapi.com?api_key={api_key}&url={url}"
-        logger.debug(f"🔀 Usando ScraperAPI para: {url[:60]}")
+        logger.info(f"🔀 Usando ScraperAPI para: {url[:60]}")
         import requests as _req
         return _req.get(proxy_url, timeout=timeout)
     if _IMPERSONATE:

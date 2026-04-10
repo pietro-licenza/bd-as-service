@@ -39,8 +39,6 @@ steps:
       - 'GCP_USE_SECRET_MANAGER=true'
       - '--set-env-vars'
       - 'DEBUG=false'
-      - '--set-env-vars'
-      - 'SCRAPER_API_KEY=573358146e1161a9f5e3c532ceac0550'
       - '--set-secrets'
       - 'GCP_SERVICE_ACCOUNT_JSON=GCP_SERVICE_ACCOUNT_SECRET_NAME:latest'
       - '--set-secrets'
