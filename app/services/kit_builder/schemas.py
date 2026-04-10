@@ -62,7 +62,12 @@ class KitProductData(BaseModel):
     dimensoes_lca: Optional[str] = None
     peso_kg: Optional[str] = None
 
-    # Imagens geradas pelo Gemini (até 3: frontal, ângulo, lifestyle)
+    # Imagens geradas pelo Gemini
+    # individual_product_urls: 1 foto por produto individual com fundo branco
+    # kit_urls: 1 foto kit fundo branco + 1 foto kit lifestyle
+    # generated_image_urls: todos juntos (individual + kit)
+    individual_product_urls: List[str] = []
+    kit_urls: List[str] = []
     generated_image_urls: List[str] = []
     image_generation_cost_brl: float = 0.0
 

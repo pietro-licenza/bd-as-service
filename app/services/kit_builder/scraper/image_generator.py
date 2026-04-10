@@ -1,6 +1,13 @@
 """
 Kit Builder Image Generator
-Selects best product photos, removes backgrounds, and generates 3 composite kit images.
+Selects best product photos, removes backgrounds, and generates composite kit images.
+
+Pipeline:
+  A) Select best photo per product (prefer white bg)
+  B) Remove background for each product → individual product photos (white bg)
+  C) Generate 2 composite kit images:
+       - kit frontal (white background)
+       - kit lifestyle (ambient environment)
 """
 import os
 import logging
@@ -124,8 +131,11 @@ class KitImageGenerator:
 
     def _remove_background(
         self, img: PIL.Image.Image, label: str
-    ) -> Tuple[Optional[PIL.Image.Image], Dict]:
-        """Calls Gemini to isolate the product on a white background."""
+    ) -> Tuple[Optional[PIL.Image.Image], Optional[str], Dict]:
+        """
+        Calls Gemini to isolate the product on a white background.
+        Returns (image, gcs_public_url, usage).
+        """
         from app.cloud import get_storage_client
         try:
             img = self._resize_image(img.copy(), 1024)
@@ -141,24 +151,25 @@ class KitImageGenerator:
             image_part = self._extract_image_part(response)
             if not image_part:
                 logger.warning(f"⚠️ bg_removal ({label}): nenhuma imagem retornada")
-                return None, usage
+                return None, None, usage
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
                 tmp.write(image_part.inline_data.data)
                 temp_path = tmp.name
 
             result_img = PIL.Image.open(temp_path).convert("RGB")
-            # upload (for cost tracking, not needed in response)
-            ts = datetime.now().strftime("%H%M%S%f")
-            get_storage_client().upload_image(temp_path, f"kit_bg_removed_{label}_{ts}.png")
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S%f")
+            public_url = get_storage_client().upload_image(
+                temp_path, f"kit_produto_{label}_{ts}.png"
+            )
             os.remove(temp_path)
 
-            logger.info(f"  ✅ bg_removal ({label}): {result_img.size}")
-            return result_img, usage
+            logger.info(f"  ✅ bg_removal ({label}): {result_img.size} | {str(public_url)[:80]}")
+            return result_img, public_url, usage
 
         except Exception as e:
             logger.error(f"❌ Erro bg_removal ({label}): {e}")
-            return None, self._zero_usage()
+            return None, None, self._zero_usage()
 
     # ------------------------------------------------------- step C: composite images
 
@@ -274,16 +285,20 @@ class KitImageGenerator:
         """
         Full pipeline:
           A) Select best photo per product (prefer white bg)
-          B) Remove background for each product
-          C) Generate 3 composite kit images (frontal, angle, lifestyle)
+          B) Remove background for each product → individual product photos (white bg, 1 per product)
+          C) Generate 2 composite kit images:
+               - kit frontal with white background
+               - kit lifestyle in ambient environment
 
         Returns:
           {
-            "generated_urls":        List[str],   # up to 3 public GCS URLs
-            "total_input_tokens":    int,
-            "total_output_tokens":   int,
-            "total_image_tokens":    int,
-            "error":                 Optional[str],
+            "individual_product_urls": List[str],  # 1 URL per product (white bg)
+            "kit_urls":                List[str],  # kit frontal + kit lifestyle
+            "generated_urls":          List[str],  # individual_product_urls + kit_urls combined
+            "total_input_tokens":      int,
+            "total_output_tokens":     int,
+            "total_image_tokens":      int,
+            "error":                   Optional[str],
           }
         """
         logger.info(f"🖼️ [Kit Image Gen] Kit: '{kit_name}' | {len(products_image_urls)} produtos")
@@ -302,23 +317,30 @@ class KitImageGenerator:
 
         if not selected:
             return {
-                "generated_urls": [],
-                "total_input_tokens": 0,
-                "total_output_tokens": 0,
-                "total_image_tokens": 0,
+                "individual_product_urls": [],
+                "kit_urls":                [],
+                "generated_urls":          [],
+                "total_input_tokens":      0,
+                "total_output_tokens":     0,
+                "total_image_tokens":      0,
                 "error": "Nenhuma imagem disponível para gerar o kit.",
             }
 
-        # ---- B: remove backgrounds ----
+        # ---- B: remove backgrounds → individual product photos with white bg ----
         cleaned: List[PIL.Image.Image] = []
+        individual_product_urls: List[str] = []
         for i, img in enumerate(selected):
-            result, usage = self._remove_background(img, f"produto_{i+1}")
+            result, prod_url, usage = self._remove_background(img, f"produto_{i+1}")
             total_input  += usage["input"]
             total_output += usage["output"]
             total_image  += usage["image_output_tokens"]
             cleaned.append(result if result is not None else img)
+            if prod_url:
+                individual_product_urls.append(prod_url)
 
-        # ---- C: generate 3 composite images ----
+        logger.info(f"  📦 Fotos individuais geradas: {len(individual_product_urls)}")
+
+        # ---- C: generate 2 composite kit images (frontal + lifestyle) ----
         environment = self._detect_lifestyle_environment(kit_name, kit_description)
         logger.info(f"  🏡 Ambiente lifestyle detectado: {environment}")
 
@@ -351,14 +373,6 @@ class KitImageGenerator:
                 ),
             ),
             (
-                "kit_img_angle",
-                (
-                    f"Professional e-commerce product photography. "
-                    f"Compose all items of the kit '{kit_name}' together at a 45-degree angle. "
-                    f"White background. Elegant composition. High resolution. {assembly_rule}"
-                ),
-            ),
-            (
                 "kit_img_lifestyle",
                 (
                     f"Professional lifestyle photography. "
@@ -368,21 +382,25 @@ class KitImageGenerator:
             ),
         ]
 
-        generated_urls: List[str] = []
+        kit_urls: List[str] = []
         for prefix, prompt in composite_prompts:
             url, usage = self._generate_kit_image(cleaned, prompt, prefix)
             total_input  += usage["input"]
             total_output += usage["output"]
             total_image  += usage["image_output_tokens"]
             if url:
-                generated_urls.append(url)
+                kit_urls.append(url)
+
+        all_urls = individual_product_urls + kit_urls
 
         return {
-            "generated_urls":     generated_urls,
-            "total_input_tokens": total_input,
-            "total_output_tokens": total_output,
-            "total_image_tokens": total_image,
-            "error": None if generated_urls else "Falha na geração de todas as imagens.",
+            "individual_product_urls": individual_product_urls,
+            "kit_urls":                kit_urls,
+            "generated_urls":          all_urls,
+            "total_input_tokens":      total_input,
+            "total_output_tokens":     total_output,
+            "total_image_tokens":      total_image,
+            "error": None if all_urls else "Falha na geração de todas as imagens.",
         }
 
 

@@ -28,16 +28,43 @@ logger = logging.getLogger(__name__)
 
 def _fetch(url: str, headers: dict, timeout: int = 20):
     """
-    Faz GET usando ScraperAPI (quando SCRAPER_API_KEY estiver setada),
-    curl_cffi com Chrome fingerprint, ou requests padrão como fallback.
+    Faz GET usando curl_cffi (Chrome fingerprint) como primário.
+    ScraperAPI usado apenas como último fallback se:
+      - curl_cffi retornar status != 200, OU
+      - HTML retornado for muito curto (< 10 KB — indica resposta bloqueada)
+
+    Preço não passa mais por aqui: é obtido direto do /api/v3/products/{id}/sellers.
     """
-    from app.core.config import settings
-    api_key = settings.SCRAPER_API_KEY
-    if api_key:
-        proxy_url = f"http://api.scraperapi.com?api_key={api_key}&url={url}"
-        logger.info(f"🔀 Usando ScraperAPI para: {url[:60]}")
-        import requests as _req
-        return _req.get(proxy_url, timeout=timeout)
+    # --- tentativa primária: curl_cffi / requests padrão ---
+    try:
+        if _IMPERSONATE:
+            r = requests.get(url, impersonate=_IMPERSONATE, timeout=timeout)
+        else:
+            r = requests.get(url, headers=headers, timeout=timeout)
+
+        if r.status_code == 200 and len(r.text) >= 10_000:
+            return r
+
+        logger.warning(
+            f"_fetch primario insuficiente (status={r.status_code}, "
+            f"len={len(getattr(r, 'text', ''))}). Tentando ScraperAPI..."
+        )
+    except Exception as e:
+        logger.warning(f"_fetch primario falhou ({e}). Tentando ScraperAPI...")
+
+    # --- fallback: ScraperAPI ---
+    try:
+        from app.core.config import settings
+        api_key = settings.SCRAPER_API_KEY
+        if api_key:
+            proxy_url = f"http://api.scraperapi.com?api_key={api_key}&url={url}"
+            logger.info(f"[ScraperAPI fallback] {url[:60]}")
+            import requests as _req
+            return _req.get(proxy_url, timeout=timeout)
+    except Exception as e:
+        logger.error(f"ScraperAPI fallback falhou: {e}")
+
+    # se chegou aqui, retorna o que temos (pode ser ruim, mas evita crash)
     if _IMPERSONATE:
         return requests.get(url, impersonate=_IMPERSONATE, timeout=timeout)
     return requests.get(url, headers=headers, timeout=timeout)
@@ -179,6 +206,78 @@ def extract_images_1800(product_url: str) -> List[str]:
     except Exception as e:
         logger.error(f"❌ Error downloading HTML: {e}")
         return []
+
+
+def _fetch_price_from_sellers_api(product_url: str) -> Optional[str]:
+    """
+    Busca o preço cheio direto do endpoint /api/v3/products/{id}/sellers.
+
+    Vantagens sobre o HTML:
+      - Endpoint JSON não é bloqueado por IP (nem localmente nem no Cloud Run)
+      - Não consome créditos do ScraperAPI
+      - Retorna price.from = preço sem desconto, price.to = preço promocional
+        → usamos price.from (o mais alto)
+
+    Retorna preço formatado "R$ X.XXX,XX" ou None se falhar.
+    """
+    m = re.search(r'(\d{5,})', product_url)
+    if not m:
+        logger.warning("_fetch_price_from_sellers_api: product_id não encontrado na URL")
+        return None
+
+    product_id = m.group(1)
+    url = f"https://www.leroymerlin.com.br/api/v3/products/{product_id}/sellers"
+    headers = {
+        "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept":          "application/json, text/plain, */*",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+        "Referer":         "https://www.leroymerlin.com.br/",
+        "Origin":          "https://www.leroymerlin.com.br",
+        "x-device":        "desktop",
+        "x-region":        "grande_sao_paulo",
+    }
+
+    try:
+        # Chama diretamente com curl_cffi (sem ScraperAPI — endpoint não é bloqueado)
+        if _IMPERSONATE:
+            r = requests.get(url, headers=headers, impersonate=_IMPERSONATE, timeout=10)
+        else:
+            import requests as _req
+            r = _req.get(url, headers=headers, timeout=10)
+
+        if r.status_code != 200:
+            logger.warning(f"sellers API status {r.status_code} para produto {product_id}")
+            return None
+
+        data = r.json()
+        sellers = data.get("data", [])
+        if not sellers:
+            logger.warning(f"sellers API: sem sellers para produto {product_id}")
+            return None
+
+        price = sellers[0].get("pricing", {}).get("price", {})
+        # price.from = preço cheio (sem desconto); price.to = preço promocional
+        price_from = price.get("from")
+        price_to   = price.get("to")
+
+        best = price_from or price_to
+        if not best:
+            return None
+
+        price_float = float(best)
+        price_str = (
+            f"R$ {price_float:,.2f}"
+            .replace(",", "X").replace(".", ",").replace("X", ".")
+        )
+        logger.info(
+            f"[sellers API] produto={product_id} | from={price_from} | to={price_to} "
+            f"-> usando {price_str}"
+        )
+        return price_str
+
+    except Exception as e:
+        logger.warning(f"[sellers API] falhou para {product_url[:60]}: {e}")
+        return None
 
 
 def extract_price_from_html(html: str) -> str:
@@ -728,7 +827,14 @@ def extract_product_data(product_url: str) -> Dict[str, any]:
 
         # Extract all data
         titulo = extract_title_from_html(html)
-        preco = extract_price_from_html(html)
+
+        # Preço: tenta sellers API primeiro (não usa ScraperAPI, mais confiável),
+        # fallback para extração do HTML se o endpoint falhar.
+        preco = _fetch_price_from_sellers_api(product_url)
+        if not preco:
+            logger.info("sellers API sem resultado — extraindo preco do HTML")
+            preco = extract_price_from_html(html)
+
         marca = extract_brand_from_html(html)
         ean = extract_ean_from_html(html)
         modelo = extract_model_from_html(html, product_url)

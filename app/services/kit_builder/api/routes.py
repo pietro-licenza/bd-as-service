@@ -153,6 +153,8 @@ async def process_kit_urls(
     # -----------------------------------------------------------------------
     # PASSO 4: Geração de imagens do kit via Gemini Image
     # -----------------------------------------------------------------------
+    individual_product_urls: list = []
+    kit_urls: list = []
     generated_image_urls: list = []
     image_gen_cost_brl: float = 0.0
     try:
@@ -168,18 +170,21 @@ async def process_kit_urls(
             kit_description=gemini_res.get("descricao", ""),
             products_qty_info=products_qty_info,
         )
-        generated_image_urls = img_result.get("generated_urls", [])
+        individual_product_urls = img_result.get("individual_product_urls", [])
+        kit_urls                = img_result.get("kit_urls", [])
+        generated_image_urls    = img_result.get("generated_urls", [])
 
         img_in   = img_result.get("total_input_tokens",  0)
         img_out  = img_result.get("total_output_tokens", 0)
         img_imgs = img_result.get("total_image_tokens",  0)
         image_gen_cost_brl = (
             img_in   * IMG_TOKEN_IN_PRICE  +
-            img_out  * IMG_TEXT_OUT_PRICE  +   # texto de saída (mínimo em geração de imagem)
-            img_imgs * IMG_TOKEN_OUT_PRICE     # tokens de imagem gerada (~1290/imagem × $30/1M)
+            img_out  * IMG_TEXT_OUT_PRICE  +
+            img_imgs * IMG_TOKEN_OUT_PRICE
         )
         logger.info(
-            f"🖼️ Imagens geradas: {len(generated_image_urls)} | "
+            f"🖼️ Fotos individuais: {len(individual_product_urls)} | "
+            f"Fotos kit: {len(kit_urls)} | "
             f"Custo: R$ {image_gen_cost_brl:.4f}"
         )
     except Exception as img_err:
@@ -195,6 +200,8 @@ async def process_kit_urls(
         ean="",
         descricao=gemini_res.get("descricao", ""),
         image_urls=kit_images,
+        individual_product_urls=individual_product_urls,
+        kit_urls=kit_urls,
         generated_image_urls=generated_image_urls,
         image_generation_cost_brl=round(image_gen_cost_brl, 6),
         url_original=kit_url,
@@ -236,7 +243,8 @@ async def process_kit_urls(
         excel_filename = f"kit_produtos_{timestamp}.xlsx"
         excel_dict = kit.dict()
         # Usa as imagens geradas pela IA no Excel (em vez das fotos originais dos produtos)
-        excel_dict["image_urls"] = kit.generated_image_urls or kit.image_urls
+        # Excel usa fotos do kit (fundo branco + lifestyle); fallback nas originais
+        excel_dict["image_urls"] = kit.kit_urls or kit.generated_image_urls or kit.image_urls
         generate_standard_excel([excel_dict], excel_filename, settings.EXPORTS_DIR, "Kit Builder", "7C3AED")
         excel_url = f"/exports/{excel_filename}"
     except Exception as e:
