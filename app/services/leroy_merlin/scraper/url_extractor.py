@@ -34,27 +34,15 @@ def extract_images_1800(product_url: str) -> List[str]:
     """
     logger.info(f"📥 Downloading HTML from: {product_url}")
     
+    # Headers to simulate a browser and avoid blocking
+    # IMPORTANT: Do NOT include Accept-Encoding to avoid gzip compression
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'Cache-Control': 'max-age=0',
     }
 
     try:
-        session = requests.Session()
-        session.headers.update(headers)
-        response = session.get(product_url, timeout=20)
+        response = requests.get(product_url, headers=headers, timeout=15)
         response.raise_for_status()
         html = response.text
 
@@ -657,27 +645,15 @@ def extract_product_data(product_url: str) -> Dict[str, any]:
     """
     logger.info(f"📥 Extracting full product data from: {product_url}")
 
+    # Headers to simulate a browser and avoid blocking
+    # IMPORTANT: Do NOT include Accept-Encoding to avoid gzip compression
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'Cache-Control': 'max-age=0',
     }
 
     try:
-        session = requests.Session()
-        session.headers.update(headers)
-        response = session.get(product_url, timeout=20)
+        response = requests.get(product_url, headers=headers, timeout=15)
         response.raise_for_status()
         html = response.text
         
