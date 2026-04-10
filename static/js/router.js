@@ -68,6 +68,7 @@ class Router {
                 'leroy': 'nav-leroy-merlin',
                 'sodimac': 'nav-sodimac',
                 'decathlon': 'nav-decathlon',
+                'kit': 'nav-kit-builder',
                 'outras': 'nav-other-integration'
             };
             document.getElementById(navMap[service])?.classList.add('active');

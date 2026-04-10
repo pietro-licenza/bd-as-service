@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from app.services.kit_builder.scraper.image_generator import get_image_generator; print\\('OK'\\)\")"
+    ]
+  }
+}

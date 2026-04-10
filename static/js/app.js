@@ -111,6 +111,12 @@ document.addEventListener('DOMContentLoaded', () => {
         onMount: initDecathlonPage
     });
 
+    router.addRoute('/integracoes/kit', {
+        title: 'Integrações - Kit Builder',
+        render: KitBuilderTemplate,
+        onMount: initKitBuilderPage
+    });
+
     // Initialize sidebar toggles
     router.initSidebarToggles();
 

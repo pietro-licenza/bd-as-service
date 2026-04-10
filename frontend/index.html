@@ -782,6 +782,10 @@
                             <span>🏪</span>
                             <span>Sodimac</span>
                         </a>
+                        <a href="#/integracoes/kit" class="nav-subitem" id="nav-kit-builder">
+                            <span>🎁</span>
+                            <span>Kit Builder</span>
+                        </a>
                         <a href="#/integracoes/outras" class="nav-subitem" id="nav-other-integration">
                             <span>📦</span>
                             <span>Outras Integrações</span>
@@ -987,6 +991,48 @@
                 `,
                 onMount: initSodimacPage
             },
+            kitBuilder: {
+                title: 'Integrações - Kit Builder',
+                render: () => `
+                    <div class="page-header">
+                        <h1>🎁 Kit Builder</h1>
+                        <p>Monte kits com produtos de múltiplos marketplaces. Informe 2 ou mais URLs e o sistema unifica tudo em um único produto.</p>
+                    </div>
+
+                    <div class="upload-section">
+                        <h2>Processar URLs do Kit</h2>
+                        <p>Cole as URLs dos produtos que vão compor o kit. Suportamos Leroy Merlin, Sodimac, Decathlon e Sam's Club.</p>
+
+                        <div id="urlsContainer"></div>
+
+                        <div class="action-buttons">
+                            <button class="btn btn-add" id="addUrlBtn">
+                                <span>➕</span>
+                                <span>Adicionar URL</span>
+                            </button>
+                            <button class="btn btn-primary" id="processUrlsBtn" style="display: none;">
+                                <span>🚀</span>
+                                <span>Montar Kit</span>
+                            </button>
+                            <button class="btn btn-secondary" id="clearUrlsBtn">
+                                <span>🗑️</span>
+                                <span>Limpar</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="results-section">
+                        <h2>📊 Resultado do Kit</h2>
+                        <div id="results">
+                            <div class="empty-state">
+                                <div class="empty-state-icon">🎁</div>
+                                <p>Nenhum kit montado ainda. Adicione 2 ou mais URLs para processar.</p>
+                            </div>
+                        </div>
+                    </div>
+                `,
+                onMount: initKitBuilderPage
+            },
             outras: {
                 title: 'Outras Integrações',
                 render: () => `
@@ -1024,6 +1070,11 @@
             } else if (hash === '/integracoes/sodimac') {
                 page = pages.sodimac;
                 document.getElementById('nav-sodimac').classList.add('active');
+                document.getElementById('nav-integrations').classList.add('active', 'expanded');
+                document.querySelector('#nav-integrations + .nav-submenu').classList.add('open');
+            } else if (hash === '/integracoes/kit') {
+                page = pages.kitBuilder;
+                document.getElementById('nav-kit-builder').classList.add('active');
                 document.getElementById('nav-integrations').classList.add('active', 'expanded');
                 document.querySelector('#nav-integrations + .nav-submenu').classList.add('open');
             } else if (hash === '/integracoes/outras') {
@@ -1496,6 +1547,199 @@
                 </div>
             `;
             resultsDiv.insertAdjacentHTML('beforeend', errorHTML);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Kit Builder Page Logic
+    // ---------------------------------------------------------------------------
+    function initKitBuilderPage() {
+        console.log('🎁 Inicializando Kit Builder...');
+
+        const addUrlBtn      = document.getElementById('addUrlBtn');
+        const processUrlsBtn = document.getElementById('processUrlsBtn');
+        const clearUrlsBtn   = document.getElementById('clearUrlsBtn');
+        const urlsContainer  = document.getElementById('urlsContainer');
+        const resultsDiv     = document.getElementById('results');
+
+        if (!addUrlBtn || !urlsContainer) return;
+
+        // Dois inputs iniciais (kit precisa de pelo menos 2)
+        addUrlInput('Produto 1 (ex: mesa - Leroy Merlin)');
+        addUrlInput('Produto 2 (ex: cadeira - Sodimac)');
+
+        addUrlBtn.addEventListener('click', () => {
+            const count = urlsContainer.querySelectorAll('.url-input-item').length + 1;
+            addUrlInput(`Produto ${count}`);
+        });
+
+        processUrlsBtn.addEventListener('click', () => processKit());
+        clearUrlsBtn.addEventListener('click', () => clearAll());
+
+        function addUrlInput(label = 'URL do Produto') {
+            const urlDiv = document.createElement('div');
+            urlDiv.className = 'url-input-item';
+            urlDiv.innerHTML = `
+                <div class="url-input-wrapper">
+                    <label>${label}</label>
+                    <input type="url" placeholder="https://www.leroymerlin.com.br/ ou sodimac.com.br ou decathlon.com.br..." />
+                    <button class="remove-url-btn">
+                        <span>❌</span>
+                        <span>Remover</span>
+                    </button>
+                </div>
+            `;
+            urlsContainer.appendChild(urlDiv);
+            updateProcessButton();
+
+            const input     = urlDiv.querySelector('input');
+            const removeBtn = urlDiv.querySelector('.remove-url-btn');
+            input.addEventListener('input', updateProcessButton);
+            removeBtn.addEventListener('click', () => {
+                urlDiv.remove();
+                updateProcessButton();
+            });
+        }
+
+        function updateProcessButton() {
+            const inputs    = urlsContainer.querySelectorAll('input[type="url"]');
+            const validUrls = Array.from(inputs).filter(i => i.value.trim().startsWith('http')).length;
+            processUrlsBtn.style.display = validUrls >= 2 ? 'inline-flex' : 'none';
+        }
+
+        function clearAll() {
+            urlsContainer.innerHTML = '';
+            resultsDiv.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">🎁</div>
+                    <p>Nenhum kit montado ainda. Adicione 2 ou mais URLs para processar.</p>
+                </div>
+            `;
+            addUrlInput('Produto 1');
+            addUrlInput('Produto 2');
+        }
+
+        async function processKit() {
+            const inputs = urlsContainer.querySelectorAll('input[type="url"]');
+            const urls   = Array.from(inputs).map(i => i.value.trim()).filter(u => u.startsWith('http'));
+
+            if (urls.length < 2) {
+                alert('Adicione pelo menos 2 URLs válidas para montar um kit.');
+                return;
+            }
+
+            processUrlsBtn.disabled = true;
+            processUrlsBtn.innerHTML = '<span>⏳</span><span>Montando Kit...</span>';
+
+            resultsDiv.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p class="loading-text">Extraindo dados dos produtos e gerando conteúdo do kit...</p>
+                </div>
+            `;
+
+            try {
+                const response = await fetch('http://localhost:8000/api/kit-builder/process-urls/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urls })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.detail || `Erro HTTP: ${response.status}`);
+                }
+
+                const data = await response.json();
+                displayKitResults(data);
+
+            } catch (error) {
+                console.error('Erro Kit Builder:', error);
+                resultsDiv.innerHTML = `
+                    <div class="product-result error">
+                        <h3><span>❌ Erro ao montar kit</span></h3>
+                        <p style="color: var(--danger-color);"><strong>Erro:</strong> ${error.message}</p>
+                    </div>
+                `;
+            } finally {
+                processUrlsBtn.disabled = false;
+                processUrlsBtn.innerHTML = '<span>🚀</span><span>Montar Kit</span>';
+            }
+        }
+
+        function displayKitResults(data) {
+            resultsDiv.innerHTML = '';
+
+            // Download Excel
+            if (data.excel_download_url) {
+                resultsDiv.insertAdjacentHTML('beforeend', `
+                    <div class="download-card">
+                        <h3><span>📊</span><span>Excel do Kit Gerado!</span></h3>
+                        <a href="${data.excel_download_url}" download class="download-link">
+                            <span>⬇️</span><span>Download Excel</span>
+                        </a>
+                    </div>
+                `);
+            }
+
+            // Card do Kit Unificado
+            const kit = data.kit;
+            if (kit) {
+                const dimsLine = [kit.largura_cm, kit.comprimento_cm, kit.altura_cm]
+                    .filter(Boolean).join(' x ');
+
+                resultsDiv.insertAdjacentHTML('beforeend', `
+                    <div class="product-result">
+                        <h3>
+                            <span>✅ Kit Montado</span>
+                            <span class="badge" style="background: rgba(124,58,237,0.15); color: #c4b5fd; border-color: rgba(124,58,237,0.3);">
+                                <span>🎁</span><span>Kit Builder</span>
+                            </span>
+                        </h3>
+                        <div class="product-data">
+                            <h4>${kit.titulo || 'Kit sem título'}</h4>
+                            <p style="color: var(--success-color); font-size: 1.5rem; font-weight: bold; margin: 0.5rem 0;">${kit.preco || ''}</p>
+                            <p><strong>Marca:</strong> ${kit.marca}</p>
+                            ${dimsLine ? `<p><strong>Dimensões (L x C x A):</strong> ${dimsLine} cm</p>` : ''}
+                            ${kit.peso_kg ? `<p><strong>Peso:</strong> ${kit.peso_kg} kg</p>` : ''}
+                            ${kit.image_urls && kit.image_urls.length > 0 ? `<p><strong>Imagens:</strong> ${kit.image_urls.length} combinadas</p>` : ''}
+                            ${kit.descricao ? `
+                                <details style="margin-top: 1rem;">
+                                    <summary style="cursor: pointer; font-weight: 600; color: var(--text-primary); margin-bottom: 0.5rem;">
+                                        Ver descrição do kit
+                                    </summary>
+                                    <p style="margin-top: 0.75rem; line-height: 1.7; color: var(--text-secondary); white-space: pre-wrap;">${kit.descricao}</p>
+                                </details>
+                            ` : ''}
+                            <p style="margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-light);">
+                                Custo Gemini: R$ ${kit.total_cost_brl?.toFixed(6) || '0.000000'}
+                            </p>
+                        </div>
+                    </div>
+                `);
+            }
+
+            // Produtos Individuais (sumário)
+            if (data.individual_products && data.individual_products.length > 0) {
+                let indivHTML = `
+                    <div class="product-result" style="margin-top: 1rem;">
+                        <h3><span>📦 Produtos do Kit (individual)</span></h3>
+                        <div class="product-data">
+                `;
+                data.individual_products.forEach((p, i) => {
+                    indivHTML += `
+                        <div style="padding: 0.75rem 0; border-bottom: 1px solid var(--border-color);">
+                            <strong>Produto ${i + 1} — ${p.marketplace?.replace('_', ' ').toUpperCase()}</strong>
+                            ${p.error ? `<p style="color:var(--danger-color);">Erro: ${p.error}</p>` : `
+                                <p>${p.titulo || 'Sem título'}</p>
+                                <p style="color: var(--success-color);">${p.preco || ''}</p>
+                            `}
+                        </div>
+                    `;
+                });
+                indivHTML += '</div></div>';
+                resultsDiv.insertAdjacentHTML('beforeend', indivHTML);
+            }
         }
     }
 }
