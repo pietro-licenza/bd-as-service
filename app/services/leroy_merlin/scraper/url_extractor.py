@@ -249,6 +249,42 @@ def extract_price_from_html(html: str) -> str:
         logger.debug(f"⚠️  Strategy 4 (heading pattern) failed: {e}")
     
     # ============================================================================
+    # STRATEGY 5: priceWithoutDiscounts (preço cheio antes do desconto)
+    # Aparece no JSON de paymentMethods embutido na página
+    # ============================================================================
+    try:
+        pattern_full = re.compile(r'"priceWithoutDiscounts"\s*:\s*([\d]+\.[\d]+)', re.IGNORECASE)
+        matches_full = pattern_full.findall(html)
+        for val in matches_full:
+            price_float = float(val)
+            if price_float > 0:
+                price_str = f"R$ {price_float:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+                if price_str not in all_prices:
+                    all_prices.append(price_str)
+                    logger.info(f"✅ Price from priceWithoutDiscounts: {price_str}")
+    except Exception as e:
+        logger.debug(f"⚠️  Strategy 5 (priceWithoutDiscounts) failed: {e}")
+
+    # ============================================================================
+    # STRATEGY 6: preço tachado no HTML (classe line-through = preço original)
+    # ============================================================================
+    try:
+        pattern_strike = re.compile(
+            r'class="[^"]*line-through[^"]*"[^>]*>\s*R\$\s*([\d.,]+)', re.IGNORECASE
+        )
+        matches_strike = pattern_strike.findall(html)
+        for val in matches_strike:
+            clean = val.replace('.', '').replace(',', '.')
+            price_float = float(clean)
+            if price_float > 0:
+                price_str = f"R$ {price_float:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+                if price_str not in all_prices:
+                    all_prices.append(price_str)
+                    logger.info(f"✅ Price from line-through (preço cheio): {price_str}")
+    except Exception as e:
+        logger.debug(f"⚠️  Strategy 6 (line-through) failed: {e}")
+
+    # ============================================================================
     # FALLBACK: Use any R$ pattern if nothing found
     # ============================================================================
     if not all_prices:

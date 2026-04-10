@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -c \"from app.services.kit_builder.scraper.image_generator import get_image_generator; print\\('OK'\\)\")"
+      "Bash(python -c \"from app.services.kit_builder.scraper.image_generator import get_image_generator; print\\('OK'\\)\")",
+      "Bash(grep -o '.\\\\{200\\\\}499,9[^0-9].\\\\{200\\\\}' \"c:/Users/Pietro/Desktop/Backup Pietro/bd_as_image_parser/html1.html\")",
+      "Bash(grep -i \"price\\\\|preco\\\\|vista\\\\|avista\\\\|promocion\\\\|R\\\\$\")",
+      "Bash(venv/Scripts/python.exe -c ':*)",
+      "Bash(grep -o '.\\\\{80\\\\}425,43.\\\\{80\\\\}' \"c:/Users/Pietro/Desktop/Backup Pietro/bd_as_image_parser/html1.html\")",
+      "Bash(grep -o 'R\\\\$[^<\"]*')"
     ]
   }
 }
