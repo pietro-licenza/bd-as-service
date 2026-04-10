@@ -4,14 +4,33 @@ URL and Image Extractor for Leroy Merlin Products
 This module extracts high-resolution product images (1800x1800) from Leroy Merlin product pages.
 Uses simple regex patterns for fast and cost-effective extraction without AI.
 """
-import requests
 import re
 import json
 import logging
 from typing import List, Dict, Optional, Tuple
 from urllib.parse import urlparse, unquote
 
+# curl_cffi imita o fingerprint TLS do Chrome, contornando bot-detection em cloud.
+# Fallback para requests padrão se não estiver disponível.
+try:
+    from curl_cffi import requests
+    _IMPERSONATE = "chrome124"
+    logger_tmp = logging.getLogger(__name__)
+    logger_tmp.debug("curl_cffi carregado — usando impersonation Chrome")
+except ImportError:
+    import requests
+    _IMPERSONATE = None
+    logger_tmp = logging.getLogger(__name__)
+    logger_tmp.warning("curl_cffi não encontrado — usando requests padrão")
+
 logger = logging.getLogger(__name__)
+
+
+def _fetch(url: str, headers: dict, timeout: int = 15):
+    """Faz GET usando curl_cffi (Chrome fingerprint) ou requests como fallback."""
+    if _IMPERSONATE:
+        return requests.get(url, impersonate=_IMPERSONATE, timeout=timeout)
+    return requests.get(url, headers=headers, timeout=timeout)
 
 
 def extract_images_1800(product_url: str) -> List[str]:
@@ -42,7 +61,7 @@ def extract_images_1800(product_url: str) -> List[str]:
     }
 
     try:
-        response = requests.get(product_url, headers=headers, timeout=15)
+        response = _fetch(product_url, headers=headers, timeout=15)
         response.raise_for_status()
         html = response.text
 
@@ -147,7 +166,7 @@ def extract_images_1800(product_url: str) -> List[str]:
         logger.info(f"✅ Found {len(final_order)} candidate images")
         return final_order
         
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         logger.error(f"❌ Error downloading HTML: {e}")
         return []
 
@@ -691,12 +710,12 @@ def extract_product_data(product_url: str) -> Dict[str, any]:
     }
 
     try:
-        response = requests.get(product_url, headers=headers, timeout=15)
+        response = _fetch(product_url, headers=headers, timeout=15)
         response.raise_for_status()
         html = response.text
-        
+
         logger.info(f"✅ HTML downloaded! Size: {len(html):,} characters")
-        
+
         # Extract all data
         titulo = extract_title_from_html(html)
         preco = extract_price_from_html(html)
@@ -733,7 +752,7 @@ def extract_product_data(product_url: str) -> Dict[str, any]:
         logger.info(f"✅ Extraction complete - Success: {result['success']}")
         return result
         
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         logger.error(f"❌ Error downloading HTML: {e}")
         return {
             "url": product_url,
