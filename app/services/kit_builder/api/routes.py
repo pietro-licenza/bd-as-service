@@ -158,10 +158,15 @@ async def process_kit_urls(
     try:
         image_generator = get_image_generator()
         products_image_urls = [p.get("image_urls", []) for p in raw_products]
+        products_qty_info = [
+            {"titulo": p.get("titulo", f"Produto {i+1}"), "quantidade": p.get("quantidade", 1)}
+            for i, p in enumerate(raw_products)
+        ]
         img_result = image_generator.generate_all_kit_images(
             products_image_urls,
             kit_titulo,
             kit_description=gemini_res.get("descricao", ""),
+            products_qty_info=products_qty_info,
         )
         generated_image_urls = img_result.get("generated_urls", [])
 

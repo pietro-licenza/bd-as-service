@@ -269,6 +269,7 @@ class KitImageGenerator:
         products_image_urls: List[List[str]],
         kit_name: str,
         kit_description: str = "",
+        products_qty_info: List[Dict] = None,
     ) -> Dict:
         """
         Full pipeline:
@@ -321,10 +322,23 @@ class KitImageGenerator:
         environment = self._detect_lifestyle_environment(kit_name, kit_description)
         logger.info(f"  🏡 Ambiente lifestyle detectado: {environment}")
 
+        # Regra de quantidade exata por produto
+        if products_qty_info:
+            qty_lines = ", ".join(
+                f"{p['quantidade']}x {p['titulo']}" for p in products_qty_info
+            )
+            qty_rule = (
+                f"The kit contains EXACTLY the following items and quantities: {qty_lines}. "
+                "Do NOT add, remove or duplicate any item. Respect these quantities strictly."
+            )
+        else:
+            qty_rule = "Include all kit items exactly as provided, with no additions or omissions."
+
         assembly_rule = (
             "Assemble all items realistically as they would be used or displayed for sale. "
             "Connected parts must be shown properly assembled (e.g. umbrella inserted in its base, "
-            "chairs arranged around the table). No loose or disconnected pieces."
+            "chairs arranged around the table). No loose or disconnected pieces. "
+            + qty_rule
         )
 
         composite_prompts = [
