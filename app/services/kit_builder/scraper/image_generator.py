@@ -142,7 +142,15 @@ class KitImageGenerator:
             response = self.client.models.generate_content(
                 model=IMAGE_MODEL,
                 contents=[
-                    "Product background removal. Isolated product. White background. Front view.",
+                    (
+                        "Professional e-commerce product photo. "
+                        "Remove the background completely and place the product on a pure white background. "
+                        "Reorient the product to its most natural and visually appealing position: "
+                        "upright if it stands (e.g. umbrella open and standing, chair on its legs, table on its feet), "
+                        "or at a slight 3/4 angle that best showcases its shape and features. "
+                        "Never show the product from directly above or below. "
+                        "The product must be fully visible, centered, and well-lit."
+                    ),
                     img,
                 ],
                 config=types.GenerateContentConfig(safety_settings=SAFETY_SETTINGS),
