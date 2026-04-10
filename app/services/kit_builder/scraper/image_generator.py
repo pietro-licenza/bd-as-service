@@ -321,13 +321,19 @@ class KitImageGenerator:
         environment = self._detect_lifestyle_environment(kit_name, kit_description)
         logger.info(f"  🏡 Ambiente lifestyle detectado: {environment}")
 
+        assembly_rule = (
+            "Assemble all items realistically as they would be used or displayed for sale. "
+            "Connected parts must be shown properly assembled (e.g. umbrella inserted in its base, "
+            "chairs arranged around the table). No loose or disconnected pieces."
+        )
+
         composite_prompts = [
             (
                 "kit_img_frontal",
                 (
                     f"Professional e-commerce product photography. "
                     f"Compose all items of the kit '{kit_name}' together in a clean frontal view. "
-                    "White background. All items clearly visible. High resolution."
+                    f"White background. All items clearly visible. High resolution. {assembly_rule}"
                 ),
             ),
             (
@@ -335,7 +341,7 @@ class KitImageGenerator:
                 (
                     f"Professional e-commerce product photography. "
                     f"Compose all items of the kit '{kit_name}' together at a 45-degree angle. "
-                    "White background. Elegant composition. High resolution."
+                    f"White background. Elegant composition. High resolution. {assembly_rule}"
                 ),
             ),
             (
@@ -343,7 +349,7 @@ class KitImageGenerator:
                 (
                     f"Professional lifestyle photography. "
                     f"Place all items of the kit '{kit_name}' in {environment}. "
-                    "Depth of field, high resolution. Inspire the customer."
+                    f"Depth of field, high resolution. Inspire the customer. {assembly_rule}"
                 ),
             ),
         ]
