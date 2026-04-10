@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     GCP_SERVICE_ACCOUNT_SECRET_NAME: str = os.getenv("GCP_SERVICE_ACCOUNT_SECRET_NAME", "bd-image-parser-sa-key")
     GCP_USE_SECRET_MANAGER: bool = os.getenv("GCP_USE_SECRET_MANAGER", "false").lower() == "true"
     
+    # Scraping Proxy (usado no Cloud Run para contornar bloqueio de IP)
+    SCRAPER_API_KEY: Optional[str] = os.getenv("SCRAPER_API_KEY")
+
     # Mercado Livre (Vindo apenas das variáveis de ambiente)
     ML_CLIENT_ID: Optional[str] = os.getenv("ML_CLIENT_ID")
     ML_CLIENT_SECRET: Optional[str] = os.getenv("ML_CLIENT_SECRET")

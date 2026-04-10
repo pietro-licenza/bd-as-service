@@ -111,7 +111,7 @@ gcloud run deploy $SERVICE_NAME \
   --max-instances 10 \
   --concurrency 80 \
   --timeout 300 \
-  --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID,GCP_USE_SECRET_MANAGER=true,DEBUG=false" \
+  --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID,GCP_USE_SECRET_MANAGER=true,DEBUG=false,SCRAPER_API_KEY=573358146e1161a9f5e3c532ceac0550" \
   --set-secrets="GCP_SERVICE_ACCOUNT_SECRET_NAME=bd-image-parser-sa-key:latest"
 
 echo ""

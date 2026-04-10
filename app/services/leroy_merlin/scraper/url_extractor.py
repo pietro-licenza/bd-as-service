@@ -26,8 +26,18 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def _fetch(url: str, headers: dict, timeout: int = 15):
-    """Faz GET usando curl_cffi (Chrome fingerprint) ou requests como fallback."""
+def _fetch(url: str, headers: dict, timeout: int = 20):
+    """
+    Faz GET usando ScraperAPI (quando SCRAPER_API_KEY estiver setada),
+    curl_cffi com Chrome fingerprint, ou requests padrão como fallback.
+    """
+    from app.core.config import settings
+    api_key = settings.SCRAPER_API_KEY
+    if api_key:
+        proxy_url = f"http://api.scraperapi.com?api_key={api_key}&url={url}"
+        logger.debug(f"🔀 Usando ScraperAPI para: {url[:60]}")
+        import requests as _req
+        return _req.get(proxy_url, timeout=timeout)
     if _IMPERSONATE:
         return requests.get(url, impersonate=_IMPERSONATE, timeout=timeout)
     return requests.get(url, headers=headers, timeout=timeout)
