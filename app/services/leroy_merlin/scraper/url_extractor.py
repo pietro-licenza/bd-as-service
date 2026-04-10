@@ -300,6 +300,8 @@ def extract_price_from_html(html: str) -> str:
     # ============================================================================
     # FIND HIGHEST PRICE
     # ============================================================================
+    logger.info(f"💰 Todos os preços encontrados: {all_prices}")
+
     if not all_prices:
         logger.error("❌ No price found in HTML")
         return None
