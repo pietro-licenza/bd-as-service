@@ -88,7 +88,6 @@ class KitBuilderGeminiClient:
                 f"    - Quantidade: {qty} unidade(s)\n"
                 f"    - Dimensões individuais (L x C x A): {dims or 'não informado'}\n"
                 f"    - Peso individual: {p.get('peso', 'não informado')}\n"
-                f"    - Modelo: {p.get('modelo', 'não informado')}\n"
             )
 
         central_block = _fmt_product(central, "PRODUTO CENTRAL")
@@ -153,7 +152,8 @@ REGRAS ABSOLUTAS
 ════════════════════════════════════════
 - Nunca cite Leroy Merlin, Sodimac, Decathlon, Sam's Club ou qualquer loja.
 - Nunca invente dimensões, pesos ou materiais não fornecidos.
-- A marca é SEMPRE "Brazil Home Living".
+- A ÚNICA marca que pode aparecer no título e na descrição é "Brazil Home Living". Nunca mencione qualquer outra marca, mesmo que ela apareça nos títulos dos produtos fornecidos.
+- Nunca mencione modelos, códigos de referência, SKUs ou numerações de modelo (ex: "Modelo XYZ-123", "Ref. 456789"). Se o título contiver um código, ignore-o completamente.
 - Sem emojis, sem HTML, sem preços, sem asteriscos, sem hifens como marcadores.
 - Linguagem formal, clara e inspiradora.
 

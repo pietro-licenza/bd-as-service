@@ -25,10 +25,10 @@ from app.services.kit_builder.scraper.url_extractor import (
 from app.services.kit_builder.scraper.gemini_client import get_gemini_client
 from app.services.kit_builder.scraper.image_generator import get_image_generator
 from app.core.config import settings
-from app.shared.excel_generator import generate_standard_excel
 from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.models.entities import ScrapingLog
+from app.services.kit_builder.kit_excel_generator import generate_kit_excel
 
 USD_TO_BRL = 5.10
 
@@ -142,8 +142,8 @@ async def process_kit_urls(
     kit_dims   = build_kit_dimensions(raw_products)
     kit_images = merge_images(raw_products, limit=10)
 
-    # URL original = concatenação das URLs para referência
-    kit_url = " | ".join(request.urls)
+    # URL original = concatenação das URLs para referência (usada na coluna URLS ORIGINAIS do Excel)
+    kit_url = ", ".join(request.urls)
 
     # Título: gerado pelo Gemini; fallback legível
     kit_titulo = gemini_res.get("titulo_kit") or " + ".join(
@@ -242,10 +242,9 @@ async def process_kit_urls(
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         excel_filename = f"kit_produtos_{timestamp}.xlsx"
         excel_dict = kit.dict()
-        # Usa as imagens geradas pela IA no Excel (em vez das fotos originais dos produtos)
-        # Excel usa fotos do kit (fundo branco + lifestyle); fallback nas originais
+        # Usa as imagens geradas pela IA no Excel (fundo branco + lifestyle); fallback nas originais
         excel_dict["image_urls"] = kit.kit_urls or kit.generated_image_urls or kit.image_urls
-        generate_standard_excel([excel_dict], excel_filename, settings.EXPORTS_DIR, "Kit Builder", "7C3AED")
+        generate_kit_excel([excel_dict], excel_filename, settings.EXPORTS_DIR)
         excel_url = f"/exports/{excel_filename}"
     except Exception as e:
         logger.error(f"❌ Falha Excel Kit: {e}")
@@ -261,27 +260,40 @@ async def process_kit_urls(
 @router.post("/generate-excel/")
 async def generate_excel(request: Request):
     """
-    Gera Excel do kit. Aceita o kit já processado para regeneração.
+    Gera Excel com todos os kits processados.
+    Aceita:
+      - {"kits": [{...}, {...}]}   → múltiplos kits (um por linha no Excel)
+      - {"kit": {...}}             → kit único (compatibilidade retroativa)
     """
     body = await request.json()
-    kit = body.get("kit", {})
 
-    # Garante marca Brazil Home Living
-    kit["marca"] = "Brazil Home Living"
+    # Suporte a múltiplos kits ou kit único
+    raw_kits = body.get("kits") or ([body["kit"]] if body.get("kit") else [])
+    if not raw_kits:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="Forneça 'kits' (lista) ou 'kit' (objeto).")
 
-    # Remove menções de marcas originais na descrição, se houver
-    descricao = kit.get("descricao", "")
-    for loja in ["Leroy Merlin", "Sodimac", "Decathlon", "Sam's Club", "SamsClub"]:
-        pattern = re.compile(rf"\b{re.escape(loja)}\b", re.IGNORECASE)
-        descricao = pattern.sub("Brazil Home Living", descricao)
-    kit["descricao"] = descricao
+    kits = []
+    store_names = ["Leroy Merlin", "Sodimac", "Decathlon", "Sam's Club", "SamsClub"]
+    for kit in raw_kits:
+        # Garante marca Brazil Home Living
+        kit["marca"] = "Brazil Home Living"
 
-    # Usa as imagens geradas pela IA no Excel (em vez das fotos originais)
-    kit["image_urls"] = kit.get("generated_image_urls") or kit.get("image_urls", [])
+        # Remove menções de lojas na descrição, se houver
+        descricao = kit.get("descricao", "")
+        for loja in store_names:
+            pattern = re.compile(rf"\b{re.escape(loja)}\b", re.IGNORECASE)
+            descricao = pattern.sub("Brazil Home Living", descricao)
+        kit["descricao"] = descricao
+
+        # Usa as imagens geradas pela IA no Excel; fallback nas originais
+        kit["image_urls"] = kit.get("kit_urls") or kit.get("generated_image_urls") or kit.get("image_urls", [])
+
+        kits.append(kit)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     excel_filename = f"kit_produtos_{timestamp}.xlsx"
-    generate_standard_excel([kit], excel_filename, settings.EXPORTS_DIR, "Kit Builder", "7C3AED")
+    generate_kit_excel(kits, excel_filename, settings.EXPORTS_DIR)
 
     excel_path = f"{settings.EXPORTS_DIR}/{excel_filename}"
     return FileResponse(
