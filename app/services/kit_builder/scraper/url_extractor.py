@@ -27,6 +27,28 @@ def detect_marketplace(url: str) -> str:
     return "unknown"
 
 
+_EMPTY_PRODUCT: Dict = {
+    "titulo": "", "preco": "", "marca": "", "ean": "", "modelo": "",
+    "largura": None, "comprimento": None, "profundidade": None,
+    "altura": None, "peso": None, "image_urls": [],
+    "success": False, "error": None,
+}
+
+
+def _normalize(data: Dict, url: str, marketplace: str) -> Dict:
+    """
+    Garante que o dict retornado por qualquer scraper sempre possui
+    todas as chaves esperadas pelo kit builder, preenchendo com None/[]
+    quando o marketplace não fornece o campo (ex: Sodimac/Decathlon não
+    têm dimensões).
+    """
+    base = dict(_EMPTY_PRODUCT)
+    base.update(data)
+    base["marketplace"] = marketplace
+    base["url"] = url
+    return base
+
+
 def extract_product_for_kit(url: str) -> Dict:
     """
     Extrai dados do produto usando o extrator do marketplace correspondente.
@@ -45,28 +67,17 @@ def extract_product_for_kit(url: str) -> Dict:
         elif marketplace == "sams_club":
             from app.services.sams_club.scraper.url_extractor import extract_product_data
         else:
-            return {
-                "titulo": "", "preco": "", "marca": "", "ean": "", "modelo": "",
-                "largura": None, "comprimento": None, "profundidade": None,
-                "altura": None, "peso": None, "image_urls": [],
-                "marketplace": marketplace, "url": url, "success": False,
-                "error": f"Marketplace não suportado: {url}"
-            }
+            return _normalize(
+                {"error": f"Marketplace não suportado: {url}", "success": False},
+                url, marketplace
+            )
 
         data = extract_product_data(url)
-        data["marketplace"] = marketplace
-        data["url"] = url
-        return data
+        return _normalize(data, url, marketplace)
 
     except Exception as e:
         logger.error(f"❌ Erro ao extrair produto de {url}: {e}")
-        return {
-            "titulo": "", "preco": "", "marca": "", "ean": "", "modelo": "",
-            "largura": None, "comprimento": None, "profundidade": None,
-            "altura": None, "peso": None, "image_urls": [],
-            "marketplace": marketplace, "url": url, "success": False,
-            "error": str(e)
-        }
+        return _normalize({"error": str(e), "success": False}, url, marketplace)
 
 
 # ---------------------------------------------------------------------------
