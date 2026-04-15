@@ -1,7 +1,6 @@
 /**
  * BD | AS Platform - Kit Builder Integration
- * Suporta múltiplos kits independentes em paralelo.
- * v3: Multi-kit com múltiplas boxes
+ * v4: Botão global "Montar Todos os Kits" + "Baixar Excel Geral"
  */
 
 const KitBuilderTemplate = () => `
@@ -12,11 +11,22 @@ const KitBuilderTemplate = () => `
 
     <div id="kitsContainer"></div>
 
-    <div style="margin-top: 1rem; display: flex; justify-content: center;">
+    <div style="margin-top: 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 1rem;">
         <button class="btn btn-add" id="addKitBtn" style="padding: 12px 36px; font-size: 1rem; border: 2px dashed rgba(124,58,237,0.45); background: rgba(124,58,237,0.07); color: #c4b5fd; border-radius: 12px; cursor: pointer;">
             <span>➕</span>
             <span>Novo Kit</span>
         </button>
+
+        <div id="globalActions" style="display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; margin-top: 0.25rem;">
+            <button id="montarTodosBtn" class="btn btn-primary"
+                style="display: none; padding: 14px 44px; font-size: 1rem; font-weight: 600; background: linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%);">
+                <span>🚀</span>&nbsp;<span>Montar Todos os Kits</span>
+            </button>
+            <button id="globalExcelBtn" class="btn btn-primary"
+                style="display: none; padding: 14px 44px; font-size: 1rem; font-weight: 600; background: linear-gradient(135deg, #059669 0%, #047857 100%);">
+                <span>📊</span>&nbsp;<span>Baixar Excel Geral</span>
+            </button>
+        </div>
     </div>
 `;
 
@@ -26,10 +36,18 @@ function initKitBuilderPage() {
 
     let kitCounter = 0;
 
+    // Armazena os objetos "kit" retornados pelo backend, indexados por kitId
+    const processedKits = new Map();
+
+    const montarTodosBtn = document.getElementById('montarTodosBtn');
+    const globalExcelBtn = document.getElementById('globalExcelBtn');
+
     // ── Inicia com 1 kit box ──────────────────────────────────────────────────
     addKitBox();
 
     document.getElementById('addKitBtn').addEventListener('click', addKitBox);
+    montarTodosBtn.addEventListener('click', processAllKits);
+    globalExcelBtn.addEventListener('click', downloadAllKitsExcel);
 
     // ── Cria uma nova kit box ─────────────────────────────────────────────────
     function addKitBox() {
@@ -47,8 +65,12 @@ function initKitBuilderPage() {
         `;
         box.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid rgba(124,58,237,0.3);">
-                <h3 style="margin: 0; color: #c4b5fd; font-size: 1.1rem;">🎁 Kit ${kitId + 1}</h3>
-                <button class="btn-remove-kit btn btn-secondary" data-kit="${kitId}" style="font-size: 0.8rem; padding: 4px 12px; display: none;" title="Remover este kit">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <h3 style="margin: 0; color: #c4b5fd; font-size: 1.1rem;">🎁 Kit ${kitId + 1}</h3>
+                    <span id="kit-status-${kitId}" style="font-size: 0.78rem; color: #888;"></span>
+                </div>
+                <button class="btn-remove-kit btn btn-secondary" data-kit="${kitId}"
+                    style="font-size: 0.8rem; padding: 4px 12px; display: none;" title="Remover este kit">
                     ✕ Remover Kit
                 </button>
             </div>
@@ -63,9 +85,6 @@ function initKitBuilderPage() {
             <div class="action-buttons" style="margin-top: 1rem;">
                 <button class="btn btn-add add-url-btn" data-kit="${kitId}">
                     <span>➕</span><span>Adicionar Produto</span>
-                </button>
-                <button class="btn btn-primary process-kit-btn" data-kit="${kitId}" style="display: none; background: linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%);">
-                    <span>🚀</span><span>Montar Kit</span>
                 </button>
                 <button class="btn btn-secondary clear-kit-btn" data-kit="${kitId}">
                     <span>🗑️</span><span>Limpar</span>
@@ -82,13 +101,12 @@ function initKitBuilderPage() {
         addUrlInput(kitId);
         document.getElementById(`urls-${kitId}`).querySelector('.kit-central-radio').checked = true;
 
-        // Eventos
+        // Eventos da box
         box.querySelector('.btn-remove-kit').addEventListener('click', () => removeKitBox(kitId));
-        box.querySelector('.add-url-btn').addEventListener('click', () => addUrlInput(kitId));
-        box.querySelector('.process-kit-btn').addEventListener('click', () => processKit(kitId));
-        box.querySelector('.clear-kit-btn').addEventListener('click', () => clearKitBox(kitId));
+        box.querySelector('.add-url-btn').addEventListener('click',    () => addUrlInput(kitId));
+        box.querySelector('.clear-kit-btn').addEventListener('click',  () => clearKitBox(kitId));
 
-        updateProcessBtn(kitId);
+        updateGlobalButtons();
         updateRemoveButtons();
         box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
@@ -97,24 +115,38 @@ function initKitBuilderPage() {
     function removeKitBox(kitId) {
         const box = document.getElementById(`kit-box-${kitId}`);
         if (box) box.remove();
+        processedKits.delete(kitId);
         updateRemoveButtons();
+        updateGlobalButtons();
         if (kitsContainer.querySelectorAll('.kit-box').length === 0) addKitBox();
     }
 
-    // ── Limpa os inputs e resultado de uma kit box ────────────────────────────
+    // ── Limpa inputs e resultado de uma kit box ───────────────────────────────
     function clearKitBox(kitId) {
         const urlsContainer = document.getElementById(`urls-${kitId}`);
         const resultDiv     = document.getElementById(`result-${kitId}`);
         if (urlsContainer) urlsContainer.innerHTML = '';
         if (resultDiv)     resultDiv.innerHTML     = '';
+        processedKits.delete(kitId);
+        setKitStatus(kitId, '');
         addUrlInput(kitId);
         addUrlInput(kitId);
-        const first = document.getElementById(`urls-${kitId}`).querySelector('.kit-central-radio');
+        const first = document.getElementById(`urls-${kitId}`)?.querySelector('.kit-central-radio');
         if (first) first.checked = true;
-        updateProcessBtn(kitId);
+        updateGlobalButtons();
     }
 
-    // ── Mostra/oculta botão Remover (só aparece quando há 2+ kits) ────────────
+    // ── Label de status por kit ───────────────────────────────────────────────
+    function setKitStatus(kitId, text) {
+        const el = document.getElementById(`kit-status-${kitId}`);
+        if (!el) return;
+        el.textContent = text;
+        el.style.color = text.includes('✅') ? '#34d399'
+                       : text.includes('❌') ? '#f87171'
+                       : '#888';
+    }
+
+    // ── Mostra/oculta botão Remover (só quando há 2+ kits) ───────────────────
     function updateRemoveButtons() {
         const boxes = kitsContainer.querySelectorAll('.kit-box');
         boxes.forEach(box => {
@@ -123,7 +155,23 @@ function initKitBuilderPage() {
         });
     }
 
-    // ── Adiciona um input de URL dentro de uma kit box ────────────────────────
+    // ── Atualiza visibilidade dos botões globais ──────────────────────────────
+    function updateGlobalButtons() {
+        // "Montar Todos" aparece se pelo menos 1 kit tem 2+ URLs válidas
+        const anyReady = Array.from(kitsContainer.querySelectorAll('.kit-box')).some(box => {
+            const kitId = parseInt(box.id.replace('kit-box-', ''));
+            const uc = document.getElementById(`urls-${kitId}`);
+            if (!uc) return false;
+            return Array.from(uc.querySelectorAll('.kit-url-input'))
+                .filter(i => i.value.trim().startsWith('http')).length >= 2;
+        });
+        montarTodosBtn.style.display = anyReady ? 'inline-flex' : 'none';
+
+        // "Excel Geral" aparece se pelo menos 1 kit foi processado
+        globalExcelBtn.style.display = processedKits.size > 0 ? 'inline-flex' : 'none';
+    }
+
+    // ── Adiciona um input de URL numa kit box ─────────────────────────────────
     function addUrlInput(kitId) {
         const urlsContainer = document.getElementById(`urls-${kitId}`);
         if (!urlsContainer) return;
@@ -150,7 +198,7 @@ function initKitBuilderPage() {
         `;
         urlsContainer.appendChild(urlDiv);
 
-        urlDiv.querySelector('.kit-url-input').addEventListener('input', () => updateProcessBtn(kitId));
+        urlDiv.querySelector('.kit-url-input').addEventListener('input', () => updateGlobalButtons());
         urlDiv.querySelector('.remove-url-btn').addEventListener('click', () => {
             const wasChecked = urlDiv.querySelector('.kit-central-radio').checked;
             urlDiv.remove();
@@ -158,25 +206,15 @@ function initKitBuilderPage() {
                 const first = document.getElementById(`urls-${kitId}`)?.querySelector('.kit-central-radio');
                 if (first) first.checked = true;
             }
-            updateProcessBtn(kitId);
+            updateGlobalButtons();
         });
     }
 
-    // ── Mostra/oculta o botão "Montar Kit" conforme URLs preenchidas ──────────
-    function updateProcessBtn(kitId) {
-        const urlsContainer = document.getElementById(`urls-${kitId}`);
-        const processBtn    = document.querySelector(`.process-kit-btn[data-kit="${kitId}"]`);
-        if (!urlsContainer || !processBtn) return;
-        const validUrls = Array.from(urlsContainer.querySelectorAll('.kit-url-input'))
-            .filter(i => i.value.trim().startsWith('http')).length;
-        processBtn.style.display = validUrls >= 2 ? 'inline-flex' : 'none';
-    }
-
-    // ── Processa um kit (chama o endpoint) ────────────────────────────────────
+    // ── Processa UM kit (chamado pelo loop global) ────────────────────────────
     async function processKit(kitId) {
         const urlsContainer = document.getElementById(`urls-${kitId}`);
         const resultDiv     = document.getElementById(`result-${kitId}`);
-        const processBtn    = document.querySelector(`.process-kit-btn[data-kit="${kitId}"]`);
+        if (!urlsContainer || !resultDiv) return;
 
         const rows  = Array.from(urlsContainer.querySelectorAll('.url-input-item'));
         const items = rows.map((row, rowIndex) => ({
@@ -186,18 +224,14 @@ function initKitBuilderPage() {
             rowIndex
         })).filter(item => item.url.startsWith('http'));
 
-        if (items.length < 2) {
-            alert('Adicione pelo menos 2 URLs válidas para montar um kit.');
-            return;
-        }
+        if (items.length < 2) return; // skip sem URLs suficientes
 
-        const urls                 = items.map(i => i.url);
-        const quantities           = items.map(i => i.quantity);
-        const centralIdx           = items.findIndex(i => i.isCentral);
+        const urls                  = items.map(i => i.url);
+        const quantities            = items.map(i => i.quantity);
+        const centralIdx            = items.findIndex(i => i.isCentral);
         const produto_central_index = centralIdx >= 0 ? centralIdx : 0;
 
-        processBtn.disabled = true;
-        processBtn.innerHTML = '<span>⏳</span><span>Montando Kit...</span>';
+        setKitStatus(kitId, '⏳ Montando...');
         resultDiv.innerHTML = `
             <div class="loading">
                 <div class="spinner"></div>
@@ -218,19 +252,79 @@ function initKitBuilderPage() {
             }
 
             const data = await response.json();
+            processedKits.set(kitId, data.kit);
+            setKitStatus(kitId, '✅ Pronto');
+            updateGlobalButtons();
             displayKitResults(kitId, data);
 
         } catch (error) {
-            console.error('Erro Kit Builder:', error);
+            console.error(`Erro Kit ${kitId}:`, error);
+            processedKits.delete(kitId);
+            setKitStatus(kitId, '❌ Erro');
+            updateGlobalButtons();
             resultDiv.innerHTML = `
                 <div class="product-result error">
                     <h3>❌ Erro ao montar kit</h3>
                     <p style="color: var(--danger-color);"><strong>Erro:</strong> ${error.message}</p>
                 </div>
             `;
+        }
+    }
+
+    // ── Processa TODOS os kits válidos em sequência ───────────────────────────
+    async function processAllKits() {
+        const boxes = Array.from(kitsContainer.querySelectorAll('.kit-box'));
+
+        montarTodosBtn.disabled = true;
+        montarTodosBtn.innerHTML = '<span>⏳</span>&nbsp;<span>Montando Kits...</span>';
+
+        for (const box of boxes) {
+            const kitId = parseInt(box.id.replace('kit-box-', ''));
+            const uc = document.getElementById(`urls-${kitId}`);
+            if (!uc) continue;
+            const validCount = Array.from(uc.querySelectorAll('.kit-url-input'))
+                .filter(i => i.value.trim().startsWith('http')).length;
+            if (validCount >= 2) {
+                await processKit(kitId);
+            }
+        }
+
+        montarTodosBtn.disabled = false;
+        montarTodosBtn.innerHTML = '<span>🚀</span>&nbsp;<span>Montar Todos os Kits</span>';
+    }
+
+    // ── Baixa Excel com todos os kits processados num único arquivo ───────────
+    async function downloadAllKitsExcel() {
+        if (processedKits.size === 0) {
+            alert('Nenhum kit processado ainda. Monte os kits primeiro.');
+            return;
+        }
+
+        globalExcelBtn.disabled = true;
+        globalExcelBtn.innerHTML = '<span>⏳</span>&nbsp;<span>Gerando Excel...</span>';
+
+        try {
+            const kits = Array.from(processedKits.values());
+            const resp = await fetch('/api/kit-builder/generate-excel/', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ kits })
+            });
+            if (!resp.ok) throw new Error('Erro ao gerar Excel');
+            const blob = await resp.blob();
+            const url  = window.URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = `bhl_kits_${new Date().getTime()}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (e) {
+            alert('Erro ao gerar Excel: ' + e.message);
         } finally {
-            processBtn.disabled = false;
-            processBtn.innerHTML = '<span>🚀</span><span>Montar Kit</span>';
+            globalExcelBtn.disabled = false;
+            globalExcelBtn.innerHTML = '<span>📊</span>&nbsp;<span>Baixar Excel Geral</span>';
         }
     }
 
@@ -243,15 +337,12 @@ function initKitBuilderPage() {
         const textCost = (data.total_cost_batch_brl || 0) - imgCost;
         const dimsLine = [kit.largura_cm, kit.comprimento_cm, kit.altura_cm].filter(Boolean).join(' x ');
 
-        // Labels das imagens: produtos individuais primeiro, depois kit
         const nIndividual = (kit.individual_product_urls || []).length;
         const imageLabels = [
             ...Array.from({ length: nIndividual }, (_, i) => `Produto ${i + 1} — Fundo Branco`),
             'Kit — Fundo Branco',
             'Kit — Lifestyle',
         ];
-
-        const excelBtnId = `excel-btn-${kitId}`;
 
         resultDiv.innerHTML = `
             <!-- Resumo de custo -->
@@ -263,16 +354,6 @@ function initKitBuilderPage() {
                     <span>💰 Total: <b>${formatBRL(data.total_cost_batch_brl)}</b></span>
                 </span>
             </div>
-
-            <!-- Excel -->
-            ${data.excel_download_url ? `
-                <div style="background: rgba(124,58,237,0.1); border: 1px solid #7C3AED; padding: 12px 15px; border-radius: 8px; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
-                    <span style="color: #c4b5fd; font-weight: 600;">📊 Excel do kit pronto!</span>
-                    <button id="${excelBtnId}" class="btn btn-primary" style="background: #7C3AED; padding: 7px 18px; font-size: 0.88rem; color: white; border-radius: 5px;">
-                        ⬇️ Baixar Excel
-                    </button>
-                </div>
-            ` : ''}
 
             <!-- Card do Kit -->
             <div class="product-result">
@@ -382,37 +463,6 @@ function initKitBuilderPage() {
                 </div>
             ` : ''}
         `;
-
-        // Bind botão Excel (precisa ser feito após innerHTML)
-        const excelBtn = document.getElementById(excelBtnId);
-        if (excelBtn) {
-            excelBtn.addEventListener('click', async () => {
-                excelBtn.disabled = true;
-                excelBtn.textContent = '⏳ Gerando...';
-                try {
-                    const resp = await fetch('/api/kit-builder/generate-excel/', {
-                        method:  'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body:    JSON.stringify({ kit })
-                    });
-                    if (!resp.ok) throw new Error('Erro ao gerar Excel');
-                    const blob = await resp.blob();
-                    const url  = window.URL.createObjectURL(blob);
-                    const a    = document.createElement('a');
-                    a.href = url;
-                    a.download = `bhl_kit_${new Date().getTime()}.xlsx`;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    window.URL.revokeObjectURL(url);
-                } catch (e) {
-                    alert('Erro ao gerar Excel: ' + e.message);
-                } finally {
-                    excelBtn.disabled = false;
-                    excelBtn.textContent = '⬇️ Baixar Excel';
-                }
-            });
-        }
 
         resultDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
