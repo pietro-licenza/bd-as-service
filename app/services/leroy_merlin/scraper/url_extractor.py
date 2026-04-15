@@ -25,6 +25,102 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Algolia — mesmas credenciais do monitoring_service.py
+# Endpoint público da Leroy, funciona do Cloud Run sem proxy.
+# ---------------------------------------------------------------------------
+_ALGOLIA_URL = (
+    "https://1cf3zt43zu-dsn.algolia.net/1/indexes/*/queries"
+    "?x-algolia-agent=Algolia%20for%20JavaScript%20(5.10.2)%3B%20Browser"
+)
+_ALGOLIA_HEADERS = {
+    "x-algolia-application-id": "1CF3ZT43ZU",
+    "x-algolia-api-key":        "150c68d1c61fc1835826a57a203dab72",
+    "User-Agent":               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "Content-Type":             "application/json",
+}
+
+
+def _fetch_product_from_algolia(product_url: str) -> Optional[Dict]:
+    """
+    Busca dados do produto no Algolia da Leroy usando o product_id extraído da URL.
+    Funciona do Cloud Run sem proxy — Algolia é a API de busca pública da Leroy.
+
+    Retorna dict com: titulo, marca, ean, modelo, image_urls e dimensões (quando
+    disponíveis), ou None se não encontrar nenhum resultado.
+    """
+    m = re.search(r'(\d{5,9})', product_url)
+    if not m:
+        logger.warning("[Algolia] product_id não encontrado na URL")
+        return None
+
+    product_id = m.group(1)
+
+    try:
+        import requests as _req   # requests padrão (não curl_cffi) para chamadas JSON
+        payload = {
+            "requests": [{
+                "indexName": "production_products",
+                "params":    f"query={product_id}&hitsPerPage=20&page=0",
+            }]
+        }
+        r = _req.post(_ALGOLIA_URL, headers=_ALGOLIA_HEADERS, json=payload, timeout=15)
+        r.raise_for_status()
+        hits = r.json()["results"][0].get("hits", [])
+
+        # Preferência: hit com product_id exato; fallback: primeiro resultado
+        hit = next((h for h in hits if str(h.get("product_id", "")) == product_id), None)
+        if not hit and hits:
+            hit = hits[0]
+        if not hit:
+            logger.warning(f"[Algolia] Nenhum hit para product_id={product_id}")
+            return None
+
+        # Marca
+        brand_raw = hit.get("brand", "")
+        if isinstance(brand_raw, dict):
+            brand = brand_raw.get("name", "")
+        else:
+            brand = str(brand_raw) if brand_raw else ""
+        brand = brand or hit.get("manufacturer", "") or hit.get("Manufacturer", "") or "Marca não encontrada"
+
+        # Imagens via Cloudinary (1800x1800)
+        image_id  = hit.get("image", "")
+        image_ids = hit.get("images") or ([image_id] if image_id else [])
+        images = [
+            f"https://res.cloudinary.com/lmru-brazil/image/upload/"
+            f"d_v1:static:product:placeholder.png/"
+            f"w_1800,h_1800,c_pad,b_white,f_auto,q_auto/"
+            f"v1/static/product/{iid}/"
+            for iid in image_ids if iid
+        ]
+
+        ean    = hit.get("ean") or hit.get("gtin13") or hit.get("gtin") or hit.get("EAN") or "EAN não encontrado"
+        modelo = hit.get("model") or hit.get("Modelo") or hit.get("modelo") or "Modelo não encontrado"
+
+        logger.info(
+            f"[Algolia] ✅ product_id={product_id} | "
+            f"titulo={str(hit.get('name', ''))[:60]} | imagens={len(images)}"
+        )
+
+        return {
+            "titulo":       hit.get("name", ""),
+            "marca":        brand,
+            "ean":          str(ean),
+            "modelo":       str(modelo),
+            "image_urls":   images,
+            # Dimensões raramente presentes no Algolia; None quando ausentes
+            "altura":       hit.get("altura"),
+            "largura":      hit.get("largura"),
+            "profundidade": hit.get("profundidade"),
+            "comprimento":  hit.get("comprimento"),
+            "peso":         hit.get("peso"),
+        }
+
+    except Exception as e:
+        logger.error(f"[Algolia] Falhou para {product_url[:70]}: {e}")
+        return None
+
 
 def _fetch(url: str, headers: dict, timeout: int = 20):
     """
@@ -811,89 +907,116 @@ def extract_product_data(product_url: str) -> Dict[str, any]:
     """
     logger.info(f"📥 Extracting full product data from: {product_url}")
 
-    # Headers to simulate a browser and avoid blocking
-    # IMPORTANT: Do NOT include Accept-Encoding to avoid gzip compression
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
     }
 
+    titulo = marca = ean = modelo = None
+    image_urls: List[str] = []
+    dimensoes: Dict[str, Optional[str]] = {k: None for k in ("altura", "largura", "profundidade", "comprimento", "peso")}
+    html_available = False
+
+    # -----------------------------------------------------------------------
+    # ESTRATÉGIA 1: Algolia (funciona do Cloud Run sem proxy)
+    # -----------------------------------------------------------------------
+    algolia = _fetch_product_from_algolia(product_url)
+    if algolia and algolia.get("titulo"):
+        titulo      = algolia["titulo"]
+        marca       = algolia["marca"]
+        ean         = algolia["ean"]
+        modelo      = algolia["modelo"]
+        image_urls  = algolia["image_urls"]
+        dimensoes   = {k: algolia.get(k) for k in dimensoes}
+        logger.info(f"[Algolia] Dados obtidos com sucesso: {titulo[:60]}")
+    else:
+        logger.warning("[Algolia] Sem resultado — tentando HTML (curl_cffi → ScraperAPI)...")
+
+    # -----------------------------------------------------------------------
+    # ESTRATÉGIA 2: HTML via curl_cffi; ESTRATÉGIA 3: ScraperAPI (último recurso)
+    # Tenta sempre, mesmo que o Algolia tenha funcionado, para complementar
+    # dimensões e imagens de alta resolução quando o HTML estiver disponível.
+    # -----------------------------------------------------------------------
     try:
         response = _fetch(product_url, headers=headers, timeout=15)
         response.raise_for_status()
         html = response.text
 
-        logger.info(f"✅ HTML downloaded! Size: {len(html):,} characters")
+        if len(html) < 10_000:
+            raise ValueError(f"HTML insuficiente ({len(html)} chars) — provavelmente bloqueado")
 
-        # Extract all data
-        titulo = extract_title_from_html(html)
+        html_available = True
+        logger.info(f"✅ HTML disponível ({len(html):,} chars) — complementando dados")
 
-        # Preço: tenta sellers API primeiro (não usa ScraperAPI, mais confiável),
-        # fallback para extração do HTML se o endpoint falhar.
-        preco = _fetch_price_from_sellers_api(product_url)
-        if not preco:
-            logger.info("sellers API sem resultado — extraindo preco do HTML")
-            preco = extract_price_from_html(html)
+        # Preenche apenas campos ainda ausentes (Algolia tem prioridade)
+        if not titulo:
+            titulo = extract_title_from_html(html)
+        if not marca or marca == "Marca não encontrada":
+            marca = extract_brand_from_html(html)
+        if not ean or ean == "EAN não encontrado":
+            ean = extract_ean_from_html(html)
+        if not modelo or modelo == "Modelo não encontrado":
+            modelo = extract_model_from_html(html, product_url)
 
-        marca = extract_brand_from_html(html)
-        ean = extract_ean_from_html(html)
-        modelo = extract_model_from_html(html, product_url)
-        dimensoes = extract_dimensions_from_html(html)
+        # Dimensões: HTML é a fonte mais confiável
+        dims_html = extract_dimensions_from_html(html)
+        for k in dimensoes:
+            if not dimensoes[k]:
+                dimensoes[k] = dims_html.get(k)
 
-        # Extract images using the improved extractor (single point of truth)
-        logger.info("🔍 Extracting images using improved extractor...")
-        image_urls = extract_images_1800(product_url)
-        if image_urls:
-            logger.info(f"✅ {len(image_urls)} images found")
-
-        result = {
-            "url": product_url,
-            "titulo": titulo or "",
-            "preco": preco or "",
-            "marca": marca,
-            "ean": ean,
-            "modelo": modelo,
-            "altura": dimensoes.get("altura"),
-            "largura": dimensoes.get("largura"),
-            "profundidade": dimensoes.get("profundidade"),
-            "comprimento": dimensoes.get("comprimento"),
-            "peso": dimensoes.get("peso"),
-            "image_urls": image_urls,
-            "success": bool(titulo and preco),
-        }
-        
-        if not result["success"]:
-            result["error"] = "Failed to extract title or price"
-        
-        logger.info(f"✅ Extraction complete - Success: {result['success']}")
-        return result
-        
-    except Exception as e:
-        logger.error(f"❌ Error downloading HTML: {e}")
-        return {
-            "url": product_url,
-            "titulo": "",
-            "preco": "",
-            "marca": "Marca não encontrada",
-            "ean": "EAN não encontrado",
-            "modelo": "Modelo não encontrado",
-            "image_urls": [],
-            "success": False,
-            "error": str(e)
-        }
+        # Imagens: prefere 1800x1800 do CDN quando HTML disponível
+        imgs_html = extract_images_1800(product_url)
+        if imgs_html:
+            image_urls = imgs_html
 
     except Exception as e:
-        logger.error(f"❌ Unexpected error: {e}", exc_info=True)
-        return {
-            "url": product_url,
-            "titulo": "",
-            "preco": "",
-            "marca": "Marca não encontrada",
-            "ean": "EAN não encontrado",
-            "image_urls": [],
-            "success": False,
-            "error": str(e)
-        }
+        if not titulo:
+            # Nem Algolia nem HTML funcionaram
+            logger.error(f"❌ Todos os métodos falharam: {e}")
+            return {
+                "url": product_url, "titulo": "", "preco": "",
+                "marca": "Marca não encontrada", "ean": "EAN não encontrado",
+                "modelo": "Modelo não encontrado", "image_urls": [],
+                "success": False, "error": str(e),
+            }
+        logger.warning(f"HTML indisponível ({e}) — usando apenas dados do Algolia")
+
+    # -----------------------------------------------------------------------
+    # Preço: Sellers API (funciona do Cloud Run); fallback no HTML
+    # -----------------------------------------------------------------------
+    preco = _fetch_price_from_sellers_api(product_url)
+    if not preco and html_available:
+        logger.info("sellers API sem resultado — extraindo preço do HTML")
+        try:
+            preco = extract_price_from_html(response.text)
+        except Exception:
+            pass
+
+    result = {
+        "url":          product_url,
+        "titulo":       titulo or "",
+        "preco":        preco or "",
+        "marca":        marca or "Marca não encontrada",
+        "ean":          ean or "EAN não encontrado",
+        "modelo":       modelo or "Modelo não encontrado",
+        "altura":       dimensoes.get("altura"),
+        "largura":      dimensoes.get("largura"),
+        "profundidade": dimensoes.get("profundidade"),
+        "comprimento":  dimensoes.get("comprimento"),
+        "peso":         dimensoes.get("peso"),
+        "image_urls":   image_urls,
+        "success":      bool(titulo and preco),
+    }
+
+    if not result["success"]:
+        result["error"] = "Título ou preço não encontrado"
+
+    logger.info(
+        f"✅ Extração concluída — Algolia={'sim' if algolia else 'não'} | "
+        f"HTML={'sim' if html_available else 'não'} | "
+        f"Success={result['success']}"
+    )
+    return result
 
 
 def extract_images_1800_batch(product_urls: List[str]) -> List[Dict[str, any]]:
