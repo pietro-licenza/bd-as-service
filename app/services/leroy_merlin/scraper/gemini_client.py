@@ -90,11 +90,16 @@ class LeroyMerlinGeminiClient:
                 
                 model = response.text.strip()
                 model = model.replace('"', '').replace("'", "").replace('\n', ' ').strip()
-                
-                if model and len(model) > 0 and model.lower() not in ['null', 'none', 'não encontrado', 'n/a']:
+
+                # Rejeita resultados inválidos: vazio, palavras reservadas ou puramente numérico
+                invalid = ['null', 'none', 'não encontrado', 'n/a', 'modelo não encontrado']
+                if (model and len(model) > 0
+                        and model.lower() not in invalid
+                        and not model.replace(' ', '').isdigit()):
                     logger.info(f"✅ Modelo extraído pelo Gemini: {model}")
                     return model
                 else:
+                    logger.warning(f"⚠️ Gemini retornou modelo inválido: '{model}'")
                     return None
 
             except Exception as e:

@@ -217,10 +217,6 @@ def _fetch_product_from_algolia(product_url: str) -> Optional[Dict]:
                 if url and url not in images:
                     images.append(url)
 
-        # Log diagnóstico — mostra o valor real do campo pictures
-        logger.debug(
-            f"[Algolia] pictures raw = {json.dumps(hit.get('pictures'), ensure_ascii=False)[:300]}"
-        )
         if not images:
             logger.warning(
                 f"[Algolia] Sem imagens para product_id={product_id}. "
@@ -282,7 +278,20 @@ def _fetch_product_from_v3_api(product_url: str) -> Optional[Dict]:
             logger.warning(f"[v3 API] status {r.status_code} para produto {product_id}")
             return None
 
-        data = r.json().get("data", r.json())
+        raw = r.json()
+        # Navega pela estrutura aninhada da v3 API:
+        # raw → product(s) → {'data': {'product': {_id, brand, images...}}}
+        data = raw
+        for _ in range(4):
+            nested = data.get("product") if isinstance(data, dict) else None
+            if isinstance(nested, dict) and nested:
+                data = nested
+            else:
+                break
+        # Após o loop, pode restar uma camada {'data': {'product': {...}}}
+        if not data.get("_id") and not data.get("name"):
+            inner2 = data.get("data") or {}
+            data   = inner2.get("product") or inner2 or data
 
         # ── Título ───────────────────────────────────────────────────────────
         titulo = data.get("name") or data.get("title") or data.get("productName") or ""
@@ -329,18 +338,45 @@ def _fetch_product_from_v3_api(product_url: str) -> Optional[Dict]:
                     break
 
         # ── Imagens ──────────────────────────────────────────────────────────
-        images_raw = data.get("images") or data.get("medias") or data.get("photos") or []
+        # Log diagnóstico: mostra todos os campos da resposta
+        # Tenta todos os campos possíveis de imagem (inclui visualMedias)
+        IMAGE_KEYS = [
+            "visualMedias", "medias", "images", "photos", "gallery", "pictures",
+            "productImages", "imageGallery", "imagens", "fotos",
+            "media", "assets", "imgs", "imageUrls", "mediaGallery",
+        ]
+        images_raw = []
+        for ik in IMAGE_KEYS:
+            candidate = data.get(ik)
+            if candidate:
+                logger.debug(f"[v3 API] campo '{ik}' encontrado = {str(candidate)[:300]}")
+                images_raw = candidate
+                break
+
+        # visualMedias é um dict {medias: [{alt, miniature, main, zoom}, ...]}
+        # onde zoom = 1800x1800, main = 600x600. Normaliza para lista antes de processar.
+        if isinstance(images_raw, dict) and "medias" in images_raw:
+            images_raw = images_raw["medias"]
+
         images = []
         if isinstance(images_raw, list):
             for img in images_raw:
                 if isinstance(img, str) and img.startswith("http"):
                     images.append(img)
                 elif isinstance(img, dict):
-                    for key in ("url", "src", "large", "zoom", "fullImage"):
-                        u = img.get(key, "")
-                        if u and u.startswith("http"):
-                            images.append(u)
-                            break
+                    # Leroy v3: zoom=1800x1800, main=600x600, miniature=140x140
+                    u = (img.get("zoom") or img.get("main") or img.get("miniature") or
+                         img.get("url") or img.get("src") or img.get("large") or
+                         img.get("fullImage") or img.get("superzoom") or img.get("big") or "")
+                    if u and u.startswith("http"):
+                        images.append(u)
+        elif isinstance(images_raw, dict):
+            best = (
+                images_raw.get("zoom") or images_raw.get("superzoom") or
+                images_raw.get("big") or images_raw.get("normal") or ""
+            )
+            if best and best.startswith("http"):
+                images.append(best)
 
         logger.info(
             f"[v3 API] ✅ product_id={product_id} | titulo={titulo[:60]} | "
