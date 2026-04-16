@@ -175,30 +175,52 @@ def _fetch_product_from_algolia(product_url: str) -> Optional[Dict]:
             for iid in image_ids_simple if iid
         ]
 
-        # Campo `pictures` — lista de dicts ou lista de strings (IDs ou URLs)
-        for pic in (hit.get("pictures") or []):
-            if isinstance(pic, str):
-                url = pic if pic.startswith("http") else (
-                    f"https://res.cloudinary.com/lmru-brazil/image/upload/"
-                    f"d_v1:static:product:placeholder.png/"
-                    f"w_1800,h_1800,c_pad,b_white,f_auto,q_auto/"
-                    f"v1/static/product/{pic}/"
-                )
-            elif isinstance(pic, dict):
-                url = pic.get("url") or pic.get("src") or pic.get("large") or ""
-                if not url.startswith("http"):
-                    iid = pic.get("id") or pic.get("imageId") or pic.get("image") or ""
-                    url = (
-                        f"https://res.cloudinary.com/lmru-brazil/image/upload/"
-                        f"d_v1:static:product:placeholder.png/"
-                        f"w_1800,h_1800,c_pad,b_white,f_auto,q_auto/"
-                        f"v1/static/product/{iid}/"
-                    ) if iid else ""
-            else:
-                url = ""
-            if url and url not in images:
-                images.append(url)
+        # Campo `pictures` — pode ser dict {micro/normal/big/superzoom: id}
+        # ou lista de dicts/strings.
+        def _cloudinary(iid: str) -> str:
+            return (
+                f"https://res.cloudinary.com/lmru-brazil/image/upload/"
+                f"d_v1:static:product:placeholder.png/"
+                f"w_1800,h_1800,c_pad,b_white,f_auto,q_auto/"
+                f"v1/static/product/{iid}/"
+            )
 
+        pictures_raw = hit.get("pictures") or []
+
+        if isinstance(pictures_raw, dict):
+            # Estrutura: {"micro": "id", "normal": "id", "big": "id", "superzoom": "id"}
+            # Cada valor é o mesmo ID — pega o superzoom (maior resolução)
+            best_id = (
+                pictures_raw.get("superzoom") or pictures_raw.get("big") or
+                pictures_raw.get("normal") or pictures_raw.get("micro") or ""
+            )
+            if best_id:
+                url = best_id if best_id.startswith("http") else _cloudinary(best_id)
+                if url not in images:
+                    images.append(url)
+                    logger.debug(f"[Algolia] pictures (dict) → {best_id[:60]}")
+        elif isinstance(pictures_raw, list):
+            for pic in pictures_raw:
+                if isinstance(pic, str):
+                    url = pic if pic.startswith("http") else _cloudinary(pic)
+                elif isinstance(pic, dict):
+                    # Cada elemento pode ser {superzoom/big/normal/micro: id}
+                    # ou {url: "...", id: "..."}
+                    iid = (
+                        pic.get("superzoom") or pic.get("big") or
+                        pic.get("url") or pic.get("src") or pic.get("large") or
+                        pic.get("id") or pic.get("imageId") or pic.get("image") or ""
+                    )
+                    url = iid if iid.startswith("http") else (_cloudinary(iid) if iid else "")
+                else:
+                    url = ""
+                if url and url not in images:
+                    images.append(url)
+
+        # Log diagnóstico — mostra o valor real do campo pictures
+        logger.debug(
+            f"[Algolia] pictures raw = {json.dumps(hit.get('pictures'), ensure_ascii=False)[:300]}"
+        )
         if not images:
             logger.warning(
                 f"[Algolia] Sem imagens para product_id={product_id}. "
