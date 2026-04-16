@@ -49,7 +49,7 @@ def _fetch_product_from_algolia(product_url: str) -> Optional[Dict]:
     Retorna dict com: titulo, marca, ean, modelo, image_urls e dimensões (quando
     disponíveis), ou None se não encontrar nenhum resultado.
     """
-    m = re.search(r'(\d{5,})', product_url)
+    m = re.search(r'_(\d{5,})(?:[/?#].*)?$', product_url)
     if not m:
         logger.warning("[Algolia] product_id não encontrado na URL")
         return None
@@ -251,7 +251,7 @@ def _fetch_product_from_v3_api(product_url: str) -> Optional[Dict]:
     Retorna dict com: titulo, marca, ean, modelo, image_urls e dimensões,
     ou None se a chamada falhar.
     """
-    m = re.search(r'(\d{5,})', product_url)
+    m = re.search(r'_(\d{5,})(?:[/?#].*)?$', product_url)
     if not m:
         return None
 
@@ -541,7 +541,7 @@ def extract_images_1800(product_url: str) -> List[str]:
         product_id = None
         try:
             # Simplest and more reliable: find any long numeric segment in URL
-            m = re.search(r'(\d{5,})', product_url)
+            m = re.search(r'_(\d{5,})(?:[/?#].*)?$', product_url)
             if m:
                 product_id = m.group(1)
         except Exception:
@@ -591,7 +591,7 @@ def _fetch_price_from_sellers_api(product_url: str) -> Optional[str]:
 
     Retorna preço formatado "R$ X.XXX,XX" ou None se falhar.
     """
-    m = re.search(r'(\d{5,})', product_url)
+    m = re.search(r'_(\d{5,})(?:[/?#].*)?$', product_url)
     if not m:
         logger.warning("_fetch_price_from_sellers_api: product_id não encontrado na URL")
         return None
