@@ -49,7 +49,7 @@ def _fetch_product_from_algolia(product_url: str) -> Optional[Dict]:
     Retorna dict com: titulo, marca, ean, modelo, image_urls e dimensões (quando
     disponíveis), ou None se não encontrar nenhum resultado.
     """
-    m = re.search(r'(\d{5,9})', product_url)
+    m = re.search(r'(\d{5,})', product_url)
     if not m:
         logger.warning("[Algolia] product_id não encontrado na URL")
         return None
@@ -76,45 +76,148 @@ def _fetch_product_from_algolia(product_url: str) -> Optional[Dict]:
             logger.warning(f"[Algolia] Nenhum hit para product_id={product_id}")
             return None
 
-        # Marca
+        # ── Extrai campos via `attributes` (lista de {name, value/values}) ──────
+        # Esse campo contém marca, modelo, EAN e dimensões para produtos sem
+        # campos de topo nível (ex: produto 3548310941).
+        attributes = hit.get("attributes") or []
+        attr_map: Dict[str, str] = {}
+        if isinstance(attributes, list):
+            for attr in attributes:
+                if not isinstance(attr, dict):
+                    continue
+                name = str(attr.get("name") or attr.get("label") or "").strip().lower()
+                vals = attr.get("values") or []
+                value = (
+                    str(vals[0]).strip() if isinstance(vals, list) and vals
+                    else str(attr.get("value") or "").strip()
+                )
+                if name and value:
+                    attr_map[name] = value
+
+        # ── Marca ────────────────────────────────────────────────────────────
         brand_raw = hit.get("brand", "")
         if isinstance(brand_raw, dict):
             brand = brand_raw.get("name", "")
         else:
             brand = str(brand_raw) if brand_raw else ""
-        brand = brand or hit.get("manufacturer", "") or hit.get("Manufacturer", "") or "Marca não encontrada"
+        brand = (
+            brand or hit.get("manufacturer", "") or hit.get("Manufacturer", "") or
+            attr_map.get("marca") or attr_map.get("brand") or attr_map.get("fabricante") or
+            "Marca não encontrada"
+        )
 
-        # Imagens via Cloudinary (1800x1800)
-        image_id  = hit.get("image", "")
-        image_ids = hit.get("images") or ([image_id] if image_id else [])
-        images = [
+        # ── EAN ──────────────────────────────────────────────────────────────
+        # Campo `eans` é uma lista; campo `ean` é string direta
+        eans_raw = hit.get("eans")
+        if isinstance(eans_raw, list) and eans_raw:
+            ean = str(eans_raw[0])
+        else:
+            ean = (
+                hit.get("ean") or hit.get("gtin13") or hit.get("gtin") or hit.get("EAN") or
+                attr_map.get("ean") or attr_map.get("código de barras") or "EAN não encontrado"
+            )
+
+        # ── Modelo ───────────────────────────────────────────────────────────
+        modelo = (
+            hit.get("model") or hit.get("Modelo") or hit.get("modelo") or
+            attr_map.get("modelo") or attr_map.get("model") or attr_map.get("referência") or
+            "Modelo não encontrado"
+        )
+
+        # ── Dimensões via attributes ──────────────────────────────────────
+        DIM_KEYS = {
+            "altura":       re.compile(r'altura', re.IGNORECASE),
+            "largura":      re.compile(r'largura', re.IGNORECASE),
+            "profundidade": re.compile(r'profundidade', re.IGNORECASE),
+            "comprimento":  re.compile(r'comprimento', re.IGNORECASE),
+            "peso":         re.compile(r'peso', re.IGNORECASE),
+        }
+        dimensoes_algolia: Dict[str, Optional[str]] = {k: None for k in DIM_KEYS}
+        for raw_name, raw_value in attr_map.items():
+            for dim_key, pattern in DIM_KEYS.items():
+                if pattern.search(raw_name) and not dimensoes_algolia[dim_key]:
+                    dimensoes_algolia[dim_key] = raw_value
+                    break
+        # Fallback: tenta campos de topo nível (produtos mais antigos)
+        for k in DIM_KEYS:
+            if not dimensoes_algolia[k]:
+                dimensoes_algolia[k] = hit.get(k)
+
+        # ── Dimensões do título como último fallback ──────────────────────
+        # Ex: "... 72x90x90cm ..." → largura=72, comprimento=90, altura=90
+        titulo_raw = hit.get("name", "")
+        if not all(dimensoes_algolia.values()):
+            dim_match = re.search(
+                r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*cm',
+                titulo_raw
+            )
+            if dim_match:
+                if not dimensoes_algolia["largura"]:
+                    dimensoes_algolia["largura"] = dim_match.group(1).replace(",", ".")
+                if not dimensoes_algolia["comprimento"]:
+                    dimensoes_algolia["comprimento"] = dim_match.group(2).replace(",", ".")
+                if not dimensoes_algolia["altura"]:
+                    dimensoes_algolia["altura"] = dim_match.group(3).replace(",", ".")
+                logger.info(f"[Algolia] Dimensões extraídas do título: {dim_match.group(0)}")
+
+        # ── Imagens via Cloudinary (1800x1800) ───────────────────────────
+        # Tenta: image (ID simples), images (lista de IDs), pictures (formato novo)
+        image_id = (
+            hit.get("image") or hit.get("imageId") or hit.get("imageUrl") or
+            hit.get("imageURL") or hit.get("photo") or hit.get("thumbnail") or ""
+        )
+        image_ids_simple = hit.get("images") or ([image_id] if image_id else [])
+        images: List[str] = [
             f"https://res.cloudinary.com/lmru-brazil/image/upload/"
             f"d_v1:static:product:placeholder.png/"
             f"w_1800,h_1800,c_pad,b_white,f_auto,q_auto/"
             f"v1/static/product/{iid}/"
-            for iid in image_ids if iid
+            for iid in image_ids_simple if iid
         ]
 
-        ean    = hit.get("ean") or hit.get("gtin13") or hit.get("gtin") or hit.get("EAN") or "EAN não encontrado"
-        modelo = hit.get("model") or hit.get("Modelo") or hit.get("modelo") or "Modelo não encontrado"
+        # Campo `pictures` — lista de dicts ou lista de strings (IDs ou URLs)
+        for pic in (hit.get("pictures") or []):
+            if isinstance(pic, str):
+                url = pic if pic.startswith("http") else (
+                    f"https://res.cloudinary.com/lmru-brazil/image/upload/"
+                    f"d_v1:static:product:placeholder.png/"
+                    f"w_1800,h_1800,c_pad,b_white,f_auto,q_auto/"
+                    f"v1/static/product/{pic}/"
+                )
+            elif isinstance(pic, dict):
+                url = pic.get("url") or pic.get("src") or pic.get("large") or ""
+                if not url.startswith("http"):
+                    iid = pic.get("id") or pic.get("imageId") or pic.get("image") or ""
+                    url = (
+                        f"https://res.cloudinary.com/lmru-brazil/image/upload/"
+                        f"d_v1:static:product:placeholder.png/"
+                        f"w_1800,h_1800,c_pad,b_white,f_auto,q_auto/"
+                        f"v1/static/product/{iid}/"
+                    ) if iid else ""
+            else:
+                url = ""
+            if url and url not in images:
+                images.append(url)
+
+        if not images:
+            logger.warning(
+                f"[Algolia] Sem imagens para product_id={product_id}. "
+                f"pictures={str(hit.get('pictures', []))[:120]}"
+            )
 
         logger.info(
             f"[Algolia] ✅ product_id={product_id} | "
-            f"titulo={str(hit.get('name', ''))[:60]} | imagens={len(images)}"
+            f"titulo={titulo_raw[:60]} | imagens={len(images)} | "
+            f"marca={brand} | ean={ean}"
         )
 
         return {
-            "titulo":       hit.get("name", ""),
+            "titulo":       titulo_raw,
             "marca":        brand,
             "ean":          str(ean),
             "modelo":       str(modelo),
             "image_urls":   images,
-            # Dimensões raramente presentes no Algolia; None quando ausentes
-            "altura":       hit.get("altura"),
-            "largura":      hit.get("largura"),
-            "profundidade": hit.get("profundidade"),
-            "comprimento":  hit.get("comprimento"),
-            "peso":         hit.get("peso"),
+            **dimensoes_algolia,
         }
 
     except Exception as e:
@@ -130,7 +233,7 @@ def _fetch_product_from_v3_api(product_url: str) -> Optional[Dict]:
     Retorna dict com: titulo, marca, ean, modelo, image_urls e dimensões,
     ou None se a chamada falhar.
     """
-    m = re.search(r'(\d{5,9})', product_url)
+    m = re.search(r'(\d{5,})', product_url)
     if not m:
         return None
 
@@ -1115,6 +1218,28 @@ def extract_product_data(product_url: str) -> Dict[str, any]:
                 "success": False, "error": str(e),
             }
         logger.warning(f"HTML indisponível ({e}) — usando apenas dados do Algolia")
+
+    # -----------------------------------------------------------------------
+    # ESTRATÉGIA 5: Gemini por URL — fallback para marca e modelo
+    # Roda sempre que algum campo ainda estiver faltando, independente do HTML.
+    # Gemini acessa a URL nos servidores do Google (AFC), sem depender do nosso IP.
+    # -----------------------------------------------------------------------
+    needs_gemini = (
+        (not marca or marca == "Marca não encontrada") or
+        (not modelo or modelo == "Modelo não encontrado")
+    )
+    if needs_gemini:
+        try:
+            from app.services.leroy_merlin.scraper.gemini_client import get_gemini_client
+            gm = get_gemini_client().extract_brand_and_model_from_url(product_url)
+            if (not marca or marca == "Marca não encontrada") and gm.get("marca"):
+                marca = gm["marca"]
+                logger.info(f"[Gemini] Marca preenchida: {marca}")
+            if (not modelo or modelo == "Modelo não encontrado") and gm.get("modelo"):
+                modelo = gm["modelo"]
+                logger.info(f"[Gemini] Modelo preenchido: {modelo}")
+        except Exception as e:
+            logger.warning(f"[Gemini fallback marca/modelo] falhou: {e}")
 
     # -----------------------------------------------------------------------
     # Preço: Sellers API (funciona do Cloud Run); fallback no HTML

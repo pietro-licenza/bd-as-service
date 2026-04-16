@@ -145,6 +145,46 @@ class LeroyMerlinGeminiClient:
                 logger.error(f"❌ Falha na descrição: {str(e)}")
                 return {"descricao": "", "usage": {"input": 0, "output": 0}}
 
+    def extract_brand_and_model_from_url(self, product_url: str) -> Dict[str, str]:
+        """
+        Pede ao Gemini para acessar a URL e extrair APENAS marca e modelo.
+        Usado como fallback quando HTML está bloqueado (Cloud Run / Cloudflare).
+        Retorna {"marca": "...", "modelo": "..."} ou campos vazios se falhar.
+        """
+        logger.info(f"🤖 [Gemini marca/modelo] Extraindo de: {product_url}")
+        prompt = f"""
+URL: {product_url}
+
+Acesse esta URL de produto e extraia APENAS dois campos:
+1. "marca": a marca/fabricante do produto (ex: "Naterial", "Tramontina", "Vonder").
+2. "modelo": o nome ou código do modelo do produto (ex: "SOLARIUM", "Ref. 12345").
+
+RESPONDA APENAS EM JSON, sem explicações:
+{{"marca": "...", "modelo": "..."}}
+
+Se não encontrar um campo, coloque string vazia "".
+"""
+        for attempt in range(2):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_text,
+                    contents=prompt
+                )
+                json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
+                if not json_match:
+                    raise ValueError("JSON não encontrado na resposta")
+                data = json.loads(json_match.group(0))
+                marca  = str(data.get("marca",  "") or "").strip()
+                modelo = str(data.get("modelo", "") or "").strip()
+                logger.info(f"✅ [Gemini marca/modelo] marca={marca} | modelo={modelo}")
+                return {"marca": marca, "modelo": modelo}
+            except Exception as e:
+                if attempt == 0:
+                    import time; time.sleep(1)
+                    continue
+                logger.error(f"❌ [Gemini marca/modelo] falhou: {e}")
+        return {"marca": "", "modelo": ""}
+
     def extract_batch_from_urls(self, product_urls: List[str]) -> List[Dict[str, any]]:
         """Processamento sequencial de URLs para integração com rotas antigas."""
         results = []
