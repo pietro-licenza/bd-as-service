@@ -122,6 +122,120 @@ def _fetch_product_from_algolia(product_url: str) -> Optional[Dict]:
         return None
 
 
+def _fetch_product_from_v3_api(product_url: str) -> Optional[Dict]:
+    """
+    Busca dados completos do produto na API v3 da Leroy Merlin.
+    Mesmo endpoint family do sellers API — funciona do Cloud Run sem proxy.
+
+    Retorna dict com: titulo, marca, ean, modelo, image_urls e dimensões,
+    ou None se a chamada falhar.
+    """
+    m = re.search(r'(\d{5,9})', product_url)
+    if not m:
+        return None
+
+    product_id = m.group(1)
+    url = f"https://www.leroymerlin.com.br/api/v3/products/{product_id}"
+    headers = {
+        "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept":          "application/json, text/plain, */*",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+        "Referer":         "https://www.leroymerlin.com.br/",
+        "Origin":          "https://www.leroymerlin.com.br",
+        "x-device":        "desktop",
+        "x-region":        "grande_sao_paulo",
+    }
+
+    try:
+        if _IMPERSONATE:
+            r = requests.get(url, headers=headers, impersonate=_IMPERSONATE, timeout=10)
+        else:
+            import requests as _req
+            r = _req.get(url, headers=headers, timeout=10)
+
+        if r.status_code != 200:
+            logger.warning(f"[v3 API] status {r.status_code} para produto {product_id}")
+            return None
+
+        data = r.json().get("data", r.json())
+
+        # ── Título ───────────────────────────────────────────────────────────
+        titulo = data.get("name") or data.get("title") or data.get("productName") or ""
+
+        # ── Marca ────────────────────────────────────────────────────────────
+        brand_raw = data.get("brand", {})
+        if isinstance(brand_raw, dict):
+            marca = brand_raw.get("name", "") or brand_raw.get("brandName", "")
+        else:
+            marca = str(brand_raw) if brand_raw else ""
+
+        # ── EAN ─────────────────────────────────────────────────────────────
+        ean = (
+            data.get("ean") or data.get("gtin13") or data.get("gtin") or
+            data.get("EAN") or "EAN não encontrado"
+        )
+
+        # ── Modelo ───────────────────────────────────────────────────────────
+        modelo = data.get("model") or data.get("modelo") or "Modelo não encontrado"
+
+        # ── Dimensões via characteristics ─────────────────────────────────
+        FIELD_MAP = {
+            "altura":       re.compile(r'^altura$', re.IGNORECASE),
+            "largura":      re.compile(r'^largura$', re.IGNORECASE),
+            "profundidade": re.compile(r'^profundidade$', re.IGNORECASE),
+            "comprimento":  re.compile(r'^comprimento$', re.IGNORECASE),
+            "peso":         re.compile(r'^peso', re.IGNORECASE),
+        }
+        dimensoes: Dict[str, Optional[str]] = {k: None for k in FIELD_MAP}
+
+        characteristics = (
+            data.get("characteristics") or
+            data.get("technicalSpecifications") or
+            data.get("specifications") or []
+        )
+        for item in characteristics:
+            if not isinstance(item, dict):
+                continue
+            name  = item.get("name", "") or item.get("key", "")
+            value = item.get("value", "") or item.get("values", [""])[0] if isinstance(item.get("values"), list) else item.get("value", "")
+            for key, pattern in FIELD_MAP.items():
+                if pattern.match(str(name).strip()) and not dimensoes[key]:
+                    dimensoes[key] = str(value).strip()
+                    break
+
+        # ── Imagens ──────────────────────────────────────────────────────────
+        images_raw = data.get("images") or data.get("medias") or data.get("photos") or []
+        images = []
+        if isinstance(images_raw, list):
+            for img in images_raw:
+                if isinstance(img, str) and img.startswith("http"):
+                    images.append(img)
+                elif isinstance(img, dict):
+                    for key in ("url", "src", "large", "zoom", "fullImage"):
+                        u = img.get(key, "")
+                        if u and u.startswith("http"):
+                            images.append(u)
+                            break
+
+        logger.info(
+            f"[v3 API] ✅ product_id={product_id} | titulo={titulo[:60]} | "
+            f"dims={[k for k,v in dimensoes.items() if v]} | imagens={len(images)}"
+        )
+
+        return {
+            "titulo":       titulo,
+            "marca":        marca or "Marca não encontrada",
+            "ean":          str(ean),
+            "modelo":       str(modelo),
+            "image_urls":   images[:10],
+            **dimensoes,
+        }
+
+    except Exception as e:
+        logger.warning(f"[v3 API] Falhou para {product_url[:70]}: {e}")
+        return None
+
+
 def _fetch(url: str, headers: dict, timeout: int = 20):
     """
     Faz GET usando curl_cffi (Chrome fingerprint) como primário.
@@ -930,12 +1044,33 @@ def extract_product_data(product_url: str) -> Dict[str, any]:
         dimensoes   = {k: algolia.get(k) for k in dimensoes}
         logger.info(f"[Algolia] Dados obtidos com sucesso: {titulo[:60]}")
     else:
-        logger.warning("[Algolia] Sem resultado — tentando HTML (curl_cffi → ScraperAPI)...")
+        logger.warning("[Algolia] Sem resultado — tentando APIs seguintes...")
 
     # -----------------------------------------------------------------------
-    # ESTRATÉGIA 2: HTML via curl_cffi; ESTRATÉGIA 3: ScraperAPI (último recurso)
-    # Tenta sempre, mesmo que o Algolia tenha funcionado, para complementar
-    # dimensões e imagens de alta resolução quando o HTML estiver disponível.
+    # ESTRATÉGIA 2: API v3 da Leroy (funciona do Cloud Run sem proxy)
+    # Complementa dimensões, EAN, modelo e imagens que o Algolia não retornou.
+    # -----------------------------------------------------------------------
+    v3 = _fetch_product_from_v3_api(product_url)
+    if v3:
+        if not titulo or titulo == "":
+            titulo = v3.get("titulo", "") or titulo
+        if not marca or marca == "Marca não encontrada":
+            marca = v3.get("marca") or marca
+        if not ean or ean == "EAN não encontrado":
+            ean = v3.get("ean") or ean
+        if not modelo or modelo == "Modelo não encontrado":
+            modelo = v3.get("modelo") or modelo
+        # Dimensões: preenche os campos que ainda estão vazios
+        for k in dimensoes:
+            if not dimensoes[k]:
+                dimensoes[k] = v3.get(k)
+        # Imagens: se a v3 trouxe mais imagens, usa (senão mantém Algolia)
+        if v3.get("image_urls") and len(v3["image_urls"]) > len(image_urls):
+            image_urls = v3["image_urls"]
+
+    # -----------------------------------------------------------------------
+    # ESTRATÉGIA 3: HTML via curl_cffi; ESTRATÉGIA 4: ScraperAPI (último recurso)
+    # Tenta complementar com HTML quando disponível (funciona localmente).
     # -----------------------------------------------------------------------
     try:
         response = _fetch(product_url, headers=headers, timeout=15)
